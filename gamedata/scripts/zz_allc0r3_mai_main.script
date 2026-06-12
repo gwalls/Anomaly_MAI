@@ -83,33 +83,19 @@ local MIN_RESTRICT_DISTANCE = 4
 -- 2. Prevents infinite circling by ensuring lack of real movement triggers the stuck timer.
 local STUCK_PROGRESS_DIST = 8
 
--- Seconds an NPC can spend stuck routing around (no net progress) before MAI commits it to
--- push_through. Long enough that a brief recalc/animation hitch doesn't trigger commit, short
--- enough that a truly trapped NPC bails before the engine parks it.
+-- Seconds an NPC can be stuck routing (no net progress) before committing to push_through.
 local NPC_STUCK_TIMEOUT = 50
 
--- Seconds to wait between turning FEEL off and setting squad.rush_to_target = true on
--- a push_through commit. Workaround for an engine-level skeleton/IK deadlock:
--- xrCriticalSection contention on UCalc_Mutex/UCalc_Mutex2 in CKinematics when a
--- thrown bolt (CMissile, rendered as CHudItem in hand) is mid-render while the NPC
--- transitions movement_type. Letting the throw animation complete first releases the
--- bolt from the hand HudItem slot, removing the contest source. Engine fix is the real
--- solution but is more invasive; see TODO_engine_fix_skeleton_mutex.md.
+-- Seconds to hold FEEL off before setting squad.rush_to_target on a push_through commit.
+-- Lets an in-flight bolt-throw animation finish so its CMissile leaves the hand HudItem
+-- slot before the movement transition, avoiding the CKinematics skeleton-mutex deadlock.
 local FEEL_TO_RUSH_DELAY = 1.5
 
--- Minimum spacing (meters) between any two NPCs sharing an avoidance behavior, regardless
--- of squad. Used as the geographic guard for two contention patterns that both freeze the
--- engine when multiple NPCs pile into a tight space:
---   (a) Feeler election: if a lower-id stalker is within this radius, the would-be feeler
---       defers. Stops two NPCs' bolt-throw renders from contesting the engine's
---       UCalc_Mutex/UCalc_Mutex2 skeleton/IK locks. Has to be at least as large as the
---       bolt visual range, since that's where render-IK can collide.
---   (b) Push-through admission: if a different squad already has a member in push_through
---       within this radius, the new commit (committer + squadmates) is denied. Stops the
---       multi-squad state-transition deadlock where one NPC's xr_reach_task wins the
---       movement race and triggers a path recompute while neighbors are mid-transition.
--- Same-squad and cross-squad both use this radius -- the bolt-render conflict doesn't care
--- about squad membership.
+-- Spacing (meters) guarding two contention patterns that freeze the engine in tight crowds:
+--   (a) Feeler election -- a would-be feeler defers if a lower-id stalker is this close, so
+--       two bolt-throw renders don't contest the CKinematics skeleton/IK locks.
+--   (b) Push-through admission -- a commit is denied if another squad is already pushing
+--       through within this radius.
 local SQUAD_CONTENTION_RADIUS = 10
 local pcall_failures_seen = {}
 
@@ -653,9 +639,8 @@ local STATIC_POST_SCHEMES = {
     kamp        = true,  -- xr_kamp: campfire idle
 }
 
--- True if the NPC's active xr_logic scheme is one of the static-post types, regardless of
--- damage status. Used to decide whether commit_push_through needs to follow up with a
--- direct force-evict (the squad rush flag only steers NPCs in xr_reach_task).
+-- True if the NPC's active scheme is a static-post type. These need a direct force-evict
+-- on commit since the squad rush flag only steers NPCs on xr_reach_task.
 local function is_in_static_post_scheme(npc)
     if not npc then return false end
     local st = db.storage[npc:id()]
@@ -665,24 +650,19 @@ end
 
 local function is_static_post_npc(npc)
     if not is_in_static_post_scheme(npc) then return false end
-    -- A static-post NPC whose anchor is in an anomaly's damage radius isn't safely
-    -- parked -- treat as non-static so MAI's normal processing (including the
-    -- took_damage push_through commit) can move them out. The scheme will pull them
-    -- back when they're clear, but that's better than letting them die at the anchor.
+    -- Not safely parked if the anchor is in damage range -- treat as non-static so the
+    -- took_damage push_through can move them out; the scheme re-parks them once clear.
     local pos = safe_call(npc.position, npc)
     if pos and is_position_in_anomaly(pos, MIN_RESTRICT_DISTANCE) then return false end
-    -- Also bypass if they took anomaly damage that MAI's cache can't see (e.g. fireballs
-    -- and other anomaly types in the always-skip list). on_anomaly_before_activate sets
-    -- took_damage regardless of cache membership, so this catches the non-cached cases.
+    -- Also bypass on damage the cache can't see (fireballs and other always-skip types);
+    -- on_anomaly_before_activate sets took_damage regardless of cache membership.
     local mai_st = npc_state[npc:id()]
     if mai_st and mai_st.took_damage then return false end
     return true
 end
 
--- True if the NPC is currently committed to a loot target via xr_corpse_detection.
--- Corpse-detection sets desired_position to the corpse vertex every Think -- the squad
--- rush flag (xr_reach_task) can't override that, so push_through commits on corpse-
--- detection NPCs need a direct force_evict to redirect them.
+-- True if the NPC is committed to a loot target. Corpse-detection re-asserts
+-- desired_position every Think, which the rush flag can't override, so these need force-evict.
 local function is_in_corpse_detection(npc)
     if not npc then return false end
     local id = npc:id()
@@ -692,18 +672,13 @@ local function is_in_corpse_detection(npc)
     return cd and cd.selected_corpse_id ~= nil
 end
 
--- Cases where push_through's rush_to_target alone won't move the NPC: static-post schemes
--- (kamp / camper / animpoint / etc. -- no xr_reach_task), and active corpse-detection
--- (NPC's desired_position is locked to a corpse vertex). Both need force_evict_to_safe_
--- vertex to override.
+-- Schemes the rush flag alone can't move (own their positioning) -- need force-evict.
 local function should_force_evict(npc)
     return is_in_static_post_scheme(npc) or is_in_corpse_detection(npc)
 end
 
--- Exported for zz_allc0r3_mai_loot_guard so it can short-circuit xr_corpse_detection's
--- evaluator while an NPC is committed to push_through (so corpse-detection doesn't keep
--- re-targeting a corpse inside the anomaly and re-asserting desired_position on top of
--- our evict destination).
+-- Exported for zz_allc0r3_mai_loot_guard to suppress corpse-detection while an NPC is
+-- pushing through (so it doesn't re-target an in-anomaly corpse over the evict destination).
 function is_npc_in_push_through(id)
     local st = npc_state[id]
     return st and st.push_through == true or false
@@ -886,8 +861,8 @@ local function get_closest_anomaly(npc_pos)
     return closest, closest_dist
 end
 
--- Eight fallback escape directions if the primary "away from closest anomaly" direction
--- happens to land in another anomaly. Cardinal + diagonal, pre-normalized.
+-- Fallback escape directions (cardinal + diagonal, pre-normalized) tried when the primary
+-- away-from-closest-anomaly direction lands in another anomaly.
 local FORCE_EVICT_FALLBACK_DIRS = {
     { 1.000,  0.000}, {-1.000, 0.000}, {0.000,  1.000}, {0.000, -1.000},
     { 0.707,  0.707}, {-0.707, 0.707}, {0.707, -0.707}, {-0.707, -0.707},
@@ -930,12 +905,8 @@ local function find_safe_escape_vertex(npc_pos)
     return nil
 end
 
--- Force-eviction for an NPC stuck in push_through without making progress. Manually sets
--- the NPC's path destination to a safe vertex via utils_obj.send_to_nearest_accessible_
--- vertex (overrides whatever idle / kamp / camper scheme is parking them) and switches
--- movement_type to run. The engine GOAP can still contest this on subsequent Thinks, but
--- the destination set is at a higher priority level than passive idle activities -- this
--- is the same hammer combat / xr_danger uses to override scheme positioning.
+-- Send a scheme-parked NPC to a safe vertex via send_to_nearest_accessible_vertex and set
+-- run. Overrides idle/kamp/camper positioning the way combat/xr_danger does.
 local function force_evict_to_safe_vertex(npc, npc_pos)
     local v_id, v_pos = find_safe_escape_vertex(npc_pos)
     if not v_id or not v_pos then
@@ -988,12 +959,8 @@ local tick_npc_positions = {}
 -- O(#anomaly_cache) table per NPC per tick (was done twice per NPC in update_npc_restrictions).
 local tick_cache_by_name = {}
 
--- Elect a feeler iff no lower-id stalker (any squad, any solo) is within
--- SQUAD_CONTENTION_RADIUS. The bolt-render conflict that triggers the engine deadlock
--- doesn't care about squad membership -- two feelers close enough for their bolt renders
--- to overlap will contest the skeleton/IK locks regardless of squad. One unified radius
--- across same-squad and cross-squad cases keeps the rule simple and the protection
--- consistent.
+-- Elect a feeler iff no lower-id stalker (any squad) is within SQUAD_CONTENTION_RADIUS, so
+-- two nearby bolt-throw renders can't contest the skeleton/IK locks.
 local function is_feeler_elected(self_id, self_pos, self_squad_id)
     for i = 1, #tick_npc_positions do
         local e = tick_npc_positions[i]
@@ -1018,33 +985,24 @@ local function set_npc_feel(npc, st, on)
     dbg_log("FEEL", "[%s] %s", npc:name() or "?", on and "ON" or "OFF")
 end
 
--- Set the squad-wide rush flag. xr_reach_task.script (the squad movement scheme) runs every
--- Think for every squad member and calls npc:set_movement_type(move.walk) when
--- squad.rush_to_target is false/nil, stomping any per-NPC set_movement_type(run) we issue.
--- Setting the squad field instead is what xr_reach_task reads to propagate run to every
--- member -- both via the commander path and soldier_execute mirroring it. Solo / unscheme'd
--- NPCs aren't squad members at all, so this is a no-op for them; their direct run call below
--- is what sticks.
+-- Set the squad rush flag. xr_reach_task forces move.walk on members each Think unless
+-- squad.rush_to_target is set, so this field (not a per-NPC set_movement_type) is what
+-- propagates run across a squad. No-op for solo NPCs, which the direct run call handles.
 local function set_squad_rush(npc, on)
     local squad = safe_call(get_object_squad, npc)
     if squad then squad.rush_to_target = on end
 end
 
--- Commit the whole squad to rushing. For squad members, set squad.rush_to_target = true so
--- xr_reach_task propagates move.run to all members every Think. For solo / unscheme'd NPCs
--- (no xr_reach_task), the direct set_movement_type(run) call is what makes them run.
+-- Commit the NPC to running: direct run for solo NPCs, squad rush flag for squad members.
 local function set_squad_running(npc)
     safe_call(npc.set_movement_type, npc, move.run)
     set_squad_rush(npc, true)
     dbg_log("SQUAD_RUN", "[%s] rush_to_target=true", npc:name() or "?")
 end
 
--- Per-NPC push_through entry: drop restrictions/feel, mark state, log. Doesn't touch the
--- squad rush flag -- that's the committer's job via set_squad_running. Used both for the
--- direct committer and for squad members pulled in by commit_push_through. The `single`
--- flag distinguishes the exit semantics: single-anomaly mode (in-contact trigger) ends as
--- soon as the NPC is clear of any anomaly's damage radius; field mode (stuck trigger) ends
--- only when nearby == 0.
+-- Mark one NPC as pushing through: drop restrictions/feel and set state. Doesn't touch the
+-- squad rush flag (set_squad_running's job). `single` = in-contact mode (exits when clear of
+-- any damage radius); field mode (stuck) exits only when no anomalies remain nearby.
 local function enter_push_through(npc, st, reason, single)
     st.pre_push_run        = (safe_call(npc.movement_type, npc) == move.run)
     st.push_through        = true
@@ -1060,18 +1018,15 @@ local function enter_push_through(npc, st, reason, single)
         npc:name() or "?", reason, single and "single" or "field")
 end
 
--- Return true if any NPC from a DIFFERENT squad (or a different solo NPC) is currently in
--- push_through within SQUAD_CONTENTION_RADIUS of `pos`. Solo NPCs use their own NPC id as
--- the identifier so each is treated as a distinct "squad of one." Used to admission-control
--- new push_through commits and prevent the multi-squad freeze pattern.
+-- True if a DIFFERENT squad (or solo NPC) is pushing through within SQUAD_CONTENTION_RADIUS
+-- of `pos`. my_identifier is the squad id, or the NPC id for solo NPCs.
 local function other_squad_pushing_near(pos, my_identifier)
     for id, st in pairs(npc_state) do
         if st.push_through then
             local obj = level.object_by_id(id)
-            -- A dead body keeps npc_state until the corpse despawns (~30 min), and
-            -- npc_on_net_destroy doesn't fire on death. Without :alive() a corpse that
-            -- died mid-push_through inside an anomaly blocks every future commit in
-            -- that area until the body times out.
+            -- Skip dead bodies: npc_state survives until corpse despawn (~30 min) since
+            -- npc_on_net_destroy doesn't fire on death, so a corpse that died mid-push
+            -- would otherwise block every commit in its radius.
             if obj and safe_call(obj.alive, obj) then
                 local obj_pos = safe_call(obj.position, obj)
                 if obj_pos and pos:distance_to(obj_pos) <= SQUAD_CONTENTION_RADIUS then
@@ -1087,10 +1042,8 @@ local function other_squad_pushing_near(pos, my_identifier)
     return false
 end
 
--- Body of commit_push_through, extracted so it can be either invoked immediately or
--- scheduled via CreateTimeEvent when the committer was actively feeling. Re-resolves npc /
--- squad from the id at call time since a deferred invocation may run after the NPC has
--- moved / changed state.
+-- commit_push_through body, split out so it can run immediately or be deferred via
+-- CreateTimeEvent. Re-resolves npc/squad from the id since a deferred call may run later.
 local function do_commit_push_through(self_id, reason, single)
     local npc = level.object_by_id(self_id)
     if not is_valid_stalker(npc) then return end
@@ -1099,12 +1052,8 @@ local function do_commit_push_through(self_id, reason, single)
 
     enter_push_through(npc, st, reason, single)
 
-    -- The squad rush flag (squad.rush_to_target = true) only steers NPCs whose active
-    -- scheme is xr_reach_task. For static-post schemes (kamp / camper / animpoint /
-    -- smartcover / sleeper / remark) the scheme owns positioning. For NPCs committed to
-    -- xr_corpse_detection the desired_position is locked to a corpse vertex every Think.
-    -- Both cases need a direct force-evict with a concrete safe destination to contest
-    -- the scheme's positioning.
+    -- Scheme-parked NPCs (static-post or corpse-detection) ignore the rush flag, so give
+    -- them a concrete safe destination to contest their scheme's positioning.
     if should_force_evict(npc) then
         local npc_pos = safe_call(npc.position, npc)
         if npc_pos then force_evict_to_safe_vertex(npc, npc_pos) end
@@ -1134,19 +1083,10 @@ local function do_commit_push_through(self_id, reason, single)
     set_squad_running(npc)
 end
 
--- Commit an NPC (and their squad) to sprinting straight through a field. Drops restrictions
--- and feel for the committer and every eligible squad member, then sets the squad rush flag.
--- Admission-controlled by other_squad_pushing_near: if another squad already has a member in
--- push_through within SQUAD_CONTENTION_RADIUS, the new commit is denied entirely (committer
--- and squadmates). This stops the multi-squad pile-up that deadlocks the engine when a
--- transition fires inside a crowded push_through cluster.
---
--- If the committer was actively feeling (st.feel_on), the ENTIRE commit body (enter_push_
--- through + squadmate propagation + set_squad_running) is deferred by FEEL_TO_RUSH_DELAY.
--- All three of those operations trigger engine state changes (FEEL transition, restriction
--- clear/path recompute, movement-type transition) that can fire the xrCriticalSection
--- skeleton/IK deadlock when a thrown bolt (CMissile) is mid-render. Deferring the whole
--- commit gives the bolt animation + render time to complete before any state change.
+-- Commit an NPC (and squad) to sprinting through. Stuck/field commits are admission-
+-- controlled by other_squad_pushing_near (denied if another squad is pushing nearby). If the
+-- committer was feeling, the whole commit is deferred FEEL_TO_RUSH_DELAY so a mid-render bolt
+-- finishes before the state changes that would trip the skeleton-mutex deadlock.
 local function commit_push_through(npc, st, reason, single)
     local self_pos = safe_call(npc.position, npc)
     local squad = safe_call(get_object_squad, npc)
@@ -1188,10 +1128,8 @@ local function update_npc_restrictions(npc, detection_radius)
     local radius = detection_radius or DETECTION_RADIUS
     local nearby = get_nearby_anomalies(npc_pos, radius)
 
-    -- Defensive: force-enable movement for any NPC sitting in an anomaly's damage radius.
-    -- Independent of any specific scheme's API -- if something else has disabled movement
-    -- and the NPC is in damage, this gets them unstuck on the next tick. Generic safety
-    -- net so unknown future schemes that lock movement can't park NPCs in zones either.
+    -- Safety net: force-enable movement for any NPC in a damage radius, so a scheme that
+    -- disabled movement can't park it in the zone.
     for _, anom in ipairs(nearby) do
         if anom.pos and npc_pos:distance_to(anom.pos) <= MIN_RESTRICT_DISTANCE then
             safe_call(npc.movement_enabled, npc, true)
@@ -1238,15 +1176,12 @@ local function update_npc_restrictions(npc, detection_radius)
         return
     end
 
-    -- Push-through: the NPC has committed to crossing. Restrictions/feel were already
-    -- dropped on commit. Reassert squad.rush_to_target each tick because another squad
-    -- member exiting push_through clears it, but xr_reach_task only honors run while it's
-    -- true -- so a still-pushing member needs to keep stamping it on.
+    -- Push-through: NPC has committed to crossing (restrictions/feel already dropped). Re-
+    -- assert the rush flag each tick since a squadmate exiting push_through clears it.
     if st.push_through then
         if st.push_through_single and not is_position_in_anomaly(npc_pos, MIN_RESTRICT_DISTANCE) then
-            -- Single-anomaly mode out of AoE: clear push_through state and fall through to
-            -- normal detection so restrictions can re-engage if other anomalies are nearby.
-            -- (Field-mode exits on nearby == 0, handled by the top branch.)
+            -- Single mode, clear of the damage AoE: end push_through and fall through to
+            -- normal detection so restrictions can re-engage on any other nearby anomalies.
             set_squad_rush(npc, false)
             if not st.pre_push_run then
                 safe_call(npc.set_movement_type, npc, move.walk)
@@ -1259,18 +1194,14 @@ local function update_npc_restrictions(npc, detection_radius)
             dbg_log("PUSH_THROUGH", "[%s] cleared (out of damage AoE)", npc:name() or "?")
             -- fall through to normal detection/restriction logic
         else
-            -- Still committed (field mode, or single mode still in damage AoE): maintain
-            -- the rush flag each tick because another squad member exiting push_through
-            -- clears it, and xr_reach_task only honors run while it's true.
+            -- Still committed: maintain the rush flag each tick.
             if st.restrictions then clear_npc_restrictions(npc) end
             set_npc_feel(npc, st, false)
             set_squad_rush(npc, true)
 
-            -- Stuck-in-push_through detection: if the NPC hasn't covered STUCK_PROGRESS_DIST
-            -- of net ground in NPC_STUCK_TIMEOUT seconds, the rush flag alone isn't moving
-            -- them (a static-post scheme is pulling them back, or the engine has parked
-            -- them). Escalate single -> field so we don't keep cycling on the AoE boundary;
-            -- field mode requires the whole cluster to clear before push_through ends.
+            -- Stuck detection: no STUCK_PROGRESS_DIST of net movement in NPC_STUCK_TIMEOUT
+            -- means the rush flag isn't moving the NPC. Escalate single -> field; a field-
+            -- stuck NPC gets a direct force-evict.
             if not st.push_anchor_pos then
                 st.push_anchor_pos  = npc_pos
                 st.push_anchor_time = current_time
@@ -1284,12 +1215,10 @@ local function update_npc_restrictions(npc, detection_radius)
                     dbg_log("PUSH_THROUGH", "[%s] stuck in single mode -> escalated to field",
                         npc:name() or "?")
                 else
-                    -- Already in field mode and still stuck. Reset the timer so the log
-                    -- doesn't spam, but flag the NPC as needing eviction. TODO: hook in
-                    -- force_evict_to_safe_vertex once it's implemented.
                     st.push_anchor_time = current_time
-                    dbg_log("PUSH_THROUGH", "[%s] stuck in field mode (needs eviction)",
+                    dbg_log("PUSH_THROUGH", "[%s] stuck in field mode -> force-evict",
                         npc:name() or "?")
+                    force_evict_to_safe_vertex(npc, npc_pos)
                 end
             end
 
@@ -1297,9 +1226,8 @@ local function update_npc_restrictions(npc, detection_radius)
         end
     end
 
-    -- In contact: took an anomaly hit since the last update. Don't probe or route -- you
-    -- don't throw bolts while burning. Commit to sprinting out (single-anomaly mode --
-    -- exits as soon as the NPC is clear of the damage AoE, not the whole cluster).
+    -- In contact: took a hit since the last tick. Commit to sprinting out in single mode
+    -- (exits as soon as clear of the damage AoE rather than the whole cluster).
     if st.took_damage then
         st.took_damage = nil
         commit_push_through(npc, st, "in contact", true)
@@ -1311,9 +1239,8 @@ local function update_npc_restrictions(npc, detection_radius)
     local final_miss = mfloor(miss_chance * state_mult)
     final_miss = mmax(0, mmin(100, final_miss))
 
-    -- Immune movement state (walking/standing, per their toggles) + not in combat =
-    -- guaranteed detection (0 miss): always restrict/avoid every nearby anomaly.
-    -- Pairs with the no-damage rule in should_enable_anomaly_damage.
+    -- Immune movement state + not in combat = guaranteed detection (0 miss): always
+    -- avoid every nearby anomaly. Pairs with the no-damage rule in should_enable_anomaly_damage.
     if is_safe_immune_state(npc) then
         final_miss = 0
         st.last_safe_time = current_time   -- feeds the running grace window (should_enable_anomaly_damage)
@@ -1403,12 +1330,9 @@ local function update_npc_restrictions(npc, detection_radius)
         end
     end
 
-    -- Engine-feel election runs independent of whether MAI's detection roll succeeded.
-    -- An NPC that misses every roll (e.g. miss_chance = 100 for low ranks) still needs
-    -- FEEL on so the engine's native feel_touch_contact accepts anomaly zones for them --
-    -- otherwise, with g_ai_die_in_anomaly = 0, the engine rejects all anomaly contacts and
-    -- the NPC is blind. Per-squad + cross-squad geographic election keeps feelers spaced
-    -- apart so multi-feeler contention (the original crash pattern) doesn't recur.
+    -- FEEL election runs regardless of the detection roll: an NPC that misses every roll
+    -- still needs feel_touch_contact on (with g_ai_die_in_anomaly = 0 the engine ignores
+    -- anomalies otherwise), and the geographic election keeps feelers from clustering.
     local feel_on = false
     if get_mcm_setting("engine_avoidance", true) then
         local self_squad = safe_call(get_object_squad, npc)
@@ -1418,28 +1342,21 @@ local function update_npc_restrictions(npc, detection_radius)
     set_npc_feel(npc, st, feel_on)
 
     if #detected > 0 then
-        -- Apply restrictions for any NPC that detected anomalies. For shape-blocking types
-        -- (thermals, vortexes, springboards) the engine puts hard navmesh obstacles in the
-        -- path; for shapeless types (electric, acidic) the call is a harmless no-op. Only
-        -- re-issue when the set changed -- re-applying an identical set every tick forces
-        -- a path rebuild and makes the NPC stutter-step ~every 2s.
+        -- Apply restrictions (hard navmesh obstacles for shape-blocking types; a no-op for
+        -- shapeless electric/acidic). Only re-issue on change -- re-applying an identical set
+        -- forces a path rebuild and stutter-steps the NPC every tick.
         if not same_restriction_set(detected, st.restrictions) then
             clear_npc_restrictions(npc)
             safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
-            -- Force path recalc on the next frame instead of waiting for the engine's
-            -- natural recalculation interval. Combined with the 2026.6.1 fix to
-            -- on_restrictions_change (which previously was a no-op), the NPC reroutes
-            -- around the new restriction before it can commit to the old path.
+            -- Force a path recalc now (2026.6.1+ API) so the NPC reroutes around the new
+            -- restriction before committing to the old path.
             safe_call(npc.invalidate_restrictions, npc)
             st.restrictions = detected
             dbg_verbose("RESTRICT", "[%s] applied %d restrictions", npc:name() or "?", #detected)
         end
 
-        -- Displacement-based progress: re-anchor and reset the stall timer whenever the
-        -- NPC covers STUCK_PROGRESS_DIST of net ground. An NPC walking in circles changes
-        -- vertex constantly but never gets far from its anchor, so it trips the timeout
-        -- and commits to push_through. Applies to both feel and restriction routing --
-        -- if neither has moved the NPC out, sprinting through is the bail.
+        -- Displacement-based stall timer: re-anchor on STUCK_PROGRESS_DIST of net ground so an
+        -- NPC circling in place (lots of motion, no progress) still trips the timeout.
         if not st.restrict_anchor_pos or not st.restrict_start then
             st.restrict_anchor_pos = npc_pos
             st.restrict_start      = current_time
@@ -1452,9 +1369,8 @@ local function update_npc_restrictions(npc, detection_radius)
             commit_push_through(npc, st, "stuck in field", false)
         end
     else
-        -- Failed every detection roll: clear restrictions and reset the stuck timer.
-        -- FEEL stays as the election determined above so the engine can still feel-touch
-        -- anomalies via the elected feeler path.
+        -- Detected nothing this tick: clear restrictions and reset the stuck timer. FEEL
+        -- stays as the election set it so the elected feeler can still feel-touch anomalies.
         clear_npc_restrictions(npc)
         st.restrict_start      = nil
         st.restrict_anchor_pos = nil
@@ -2104,12 +2020,9 @@ local function on_npc_net_spawn(npc)
     configure_npc_anomaly_interaction(npc)
 end
 
--- npc_on_net_destroy only fires when the server entity unregisters (corpse despawn,
--- level exit). A fresh corpse stays online for ~30 min with its npc_state intact,
--- including any push_through = true flag set at the moment of death. Anything that
--- iterates npc_state looking at push_through (other_squad_pushing_near, heartbeat,
--- etc.) will see a stale ghost entry. Drop the per-NPC fields here so the entry
--- becomes inert as soon as the NPC dies.
+-- npc_on_net_destroy only fires on corpse despawn (~30 min), so without this the dead NPC's
+-- push_through flag lingers in npc_state and other_squad_pushing_near treats it as a live
+-- pusher. Clear the avoidance fields at the moment of death.
 local function on_npc_death(npc)
     if not npc then return end
     local id = type(npc) == "number" and npc or (is_valid_object(npc) and npc:id()) or nil
