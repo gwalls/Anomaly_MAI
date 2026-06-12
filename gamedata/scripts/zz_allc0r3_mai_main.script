@@ -1153,7 +1153,10 @@ local function commit_push_through(npc, st, reason, single)
     local self_id = npc:id()
     local my_identifier = squad and squad.id or self_id
 
-    if self_pos and other_squad_pushing_near(self_pos, my_identifier) then
+    -- Admission control guards only stuck/field commits. An in-contact (single) NPC is
+    -- already burning and past the bolt-throw phase, so it can't cause the bolt-render
+    -- deadlock the denial protects against -- denying it just lets it die in the zone.
+    if not single and self_pos and other_squad_pushing_near(self_pos, my_identifier) then
         dbg_log("PUSH_THROUGH", "[%s] commit denied (other squad pushing in area)",
             npc:name() or "?")
         return
