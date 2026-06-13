@@ -62,14 +62,16 @@ local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 -- fallback when the base_detection_radius MCM setting is unavailable.
 local DETECTION_RADIUS = 30
 
--- Max concurrent anomaly restrictions per NPC.
--- Higher values improve routing around dense clusters, but risk "enclosure" CTDs
--- (surrounding avoid-zones removing all valid navmesh).
--- Kept low deliberately because:
---   1. Threats are sorted closest-first, so a small budget handles immediate danger.
---   2. It minimizes enclosure risk alongside existing safeguards (MIN_RESTRICT_DISTANCE
---      and the stuck-timeout push-through).
-local MAX_RESTRICTIONS_PER_NPC = 12
+-- Max concurrent anomaly restrictions per NPC. Keep this HIGH.
+-- A low cap does NOT meaningfully improve crash safety: the enclosure CTD
+-- (setup_movement_params dereferencing the u32(-1) sentinel from accessible_nearest) is
+-- prevented by MIN_RESTRICT_DISTANCE, which always leaves the NPC an unrestricted pocket so
+-- the engine can find an accessible vertex -- regardless of how many zones are restricted.
+-- What a LOW cap DOES cause: when more anomalies are in range than the cap allows, the kept
+-- subset shuffles as the NPC moves, so the restriction set changes every tick -> add_-
+-- restrictions + invalidate_restrictions every tick -> a ~2s path-rebuild thrash/jerk.
+-- Incumbent-stickiness handles the rare genuine over-cap case; this stays high as a ceiling.
+local MAX_RESTRICTIONS_PER_NPC = 30
 
 -- Distance threshold in meters for considering an NPC inside an anomaly.
 -- At this range:
@@ -906,8 +908,10 @@ local function find_safe_escape_vertex(npc_pos)
 end
 
 -- Send a scheme-parked NPC to a safe vertex via send_to_nearest_accessible_vertex and set
--- run. Overrides idle/kamp/camper positioning the way combat/xr_danger does.
+-- run. Overrides idle/kamp/camper positioning the way combat/xr_danger does. Gated here (the
+-- single choke point for every caller) by the force_evict_enabled MCM toggle.
 local function force_evict_to_safe_vertex(npc, npc_pos)
+    if not get_mcm_setting("force_evict_enabled", true) then return false end
     local v_id, v_pos = find_safe_escape_vertex(npc_pos)
     if not v_id or not v_pos then
         dbg_log("EVICT", "[%s] no safe vertex found", npc:name() or "?")
@@ -948,6 +952,16 @@ local function same_restriction_set(a, b)
         if not seen[b[i]] then return false end
     end
     return true
+end
+
+-- True if `detected` contains an anomaly the NPC hadn't already encountered (`known_before`,
+-- a name->true set). Only a genuinely new threat forces an urgent reroute -- a remembered
+-- anomaly re-entering the set (e.g. a dynamic zone blinking back on) does not.
+local function has_new_anomaly(detected, known_before)
+    for i = 1, #detected do
+        if not known_before[detected[i]] then return true end
+    end
+    return false
 end
 
 -- Per-tick snapshot of online stalker positions (with squad id), rebuilt at the top of
@@ -1246,6 +1260,16 @@ local function update_npc_restrictions(npc, detection_radius)
         st.last_safe_time = current_time   -- feeds the running grace window (should_enable_anomaly_damage)
     end
 
+    -- Anomalies the NPC already knew coming into this tick (memory + last tick's restricted
+    -- set). Used to gate the reroute: a name in here re-entering the set isn't a new threat.
+    local known_before = {}
+    if st.known_anomalies then
+        for name in pairs(st.known_anomalies) do known_before[name] = true end
+    end
+    if st.restrictions then
+        for _, n in ipairs(st.restrictions) do known_before[n] = true end
+    end
+
     local detected = {}
     local rank = "unknown"
     if ranks and ranks.get_obj_rank_name then
@@ -1290,13 +1314,13 @@ local function update_npc_restrictions(npc, detection_radius)
         local known = st.known_anomalies
         local cache_by_name = tick_cache_by_name
 
-        -- Add remembered anomalies not caught by this detection roll (up to cap).
+        -- Add remembered anomalies not caught by this detection roll (up to cap). A disabled
+        -- dynamic anomaly has no cache pos this tick; skip it but keep it remembered (decay
+        -- below handles removal) so its re-enable isn't treated as a brand-new threat.
         for anom_name, mem in pairs(known) do
             if #detected >= MAX_RESTRICTIONS_PER_NPC then break end
             local c_pos = cache_by_name[anom_name]
-            if not c_pos then
-                known[anom_name] = nil
-            else
+            if c_pos then
                 local dist = npc_pos:distance_to(c_pos)
                 if dist <= 2 * radius and dist >= MIN_RESTRICT_DISTANCE then
                     local already = false
@@ -1317,13 +1341,15 @@ local function update_npc_restrictions(npc, detection_radius)
             known[anom_name] = { last_seen = current_time }
         end
 
-        -- Decay: forget anomalies that are far away and stale.
+        -- Decay by staleness, not cache-absence: a cycling anomaly in its off-phase keeps its
+        -- memory entry (so a fast blink doesn't read as new); only drop it once it's been
+        -- unseen past the memory window, or it's gone far away and stale.
         for anom_name, mem in pairs(known) do
+            local stale = (current_time - mem.last_seen) > mem_decay_ms
             local c_pos = cache_by_name[anom_name]
             if not c_pos then
-                known[anom_name] = nil
-            elseif npc_pos:distance_to(c_pos) > 2 * radius
-                    and (current_time - mem.last_seen) > mem_decay_ms then
+                if stale then known[anom_name] = nil end
+            elseif npc_pos:distance_to(c_pos) > 2 * radius and stale then
                 known[anom_name] = nil
                 dbg_verbose("MEMORY", "[%s] forgot [%s]", npc:name() or "?", anom_name)
             end
@@ -1343,16 +1369,18 @@ local function update_npc_restrictions(npc, detection_radius)
 
     if #detected > 0 then
         -- Apply restrictions (hard navmesh obstacles for shape-blocking types; a no-op for
-        -- shapeless electric/acidic). Only re-issue on change -- re-applying an identical set
-        -- forces a path rebuild and stutter-steps the NPC every tick.
+        -- shapeless electric/acidic). Only re-issue on change.
         if not same_restriction_set(detected, st.restrictions) then
+            -- Only force an immediate reroute for a genuinely new anomaly. Shrinks, reshuffles,
+            -- and dynamic zones blinking back on don't need one -- invalidating on every change
+            -- rebuilds the path each tick (the ~2s thrash/jerk).
+            local grew = has_new_anomaly(detected, known_before)
             clear_npc_restrictions(npc)
             safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
-            -- Force a path recalc now (2026.6.1+ API) so the NPC reroutes around the new
-            -- restriction before committing to the old path.
-            safe_call(npc.invalidate_restrictions, npc)
+            if grew then safe_call(npc.invalidate_restrictions, npc) end  -- 2026.6.1+ API
             st.restrictions = detected
-            dbg_verbose("RESTRICT", "[%s] applied %d restrictions", npc:name() or "?", #detected)
+            dbg_verbose("RESTRICT", "[%s] applied %d restrictions%s",
+                npc:name() or "?", #detected, grew and " (grew)" or "")
         end
 
         -- Displacement-based stall timer: re-anchor on STUCK_PROGRESS_DIST of net ground so an

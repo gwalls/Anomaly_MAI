@@ -456,6 +456,13 @@
         <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 3</text>
     </string>
 
+    <string id="ui_mcm_mai_force_evict_enabled">
+        <text>Force-Evict Stuck NPCs</text>
+    </string>
+    <string id="ui_mcm_mai_force_evict_enabled_desc">
+        <text>When an NPC is stuck in an anomaly that its AI scheme won't let it leave (campfire/camper guards, or NPCs looting a corpse), push a movement target to a safe vertex so it sprints clear. Turn OFF to let those NPCs rely only on the squad rush flag (they may sit and take damage). Default: ON</text>
+    </string>
+
     <!-- ### Community Exclusions ### -->
 
     <string id="ui_mcm_mai_community_excl_title">
