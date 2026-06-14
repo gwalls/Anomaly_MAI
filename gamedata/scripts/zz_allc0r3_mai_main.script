@@ -58,9 +58,6 @@ local npc_state = {}
 -- we credit that anomaly via report_anomaly_death, otherwise the attribution is dropped so
 -- an unrelated death (gunfire, mutant, etc.) isn't mis-credited to a stale anomaly hit.
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
--- Radius (meters) around an NPC scanned for anomalies each periodic tick. Used as the
--- fallback when the base_detection_radius MCM setting is unavailable.
-local DETECTION_RADIUS = 30
 
 -- Max concurrent anomaly restrictions per NPC. Keep this HIGH.
 -- A low cap does NOT meaningfully improve crash safety: the enclosure CTD
@@ -641,8 +638,8 @@ local STATIC_POST_SCHEMES = {
     kamp        = true,  -- xr_kamp: campfire idle
 }
 
--- True if the NPC's active scheme is a static-post type. These need a direct force-evict
--- on commit since the squad rush flag only steers NPCs on xr_reach_task.
+-- True if the NPC's active scheme is a static-post type (parked guard / sleeper / etc.).
+-- Used by is_static_post_npc to skip them from avoidance processing unless they're in danger.
 local function is_in_static_post_scheme(npc)
     if not npc then return false end
     local st = db.storage[npc:id()]
@@ -958,9 +955,10 @@ local function other_squad_pushing_near(pos, my_identifier)
     return false
 end
 
--- commit_push_through body, split out so it can run immediately or be deferred via
--- CreateTimeEvent. Re-resolves npc/squad from the id since a deferred call may run later.
-local function do_commit_push_through(self_id, reason, single)
+-- The committed work: push the committer + eligible squadmates into push_through, then set
+-- the squad running. Called by request_push_through, immediately or deferred via CreateTime-
+-- Event; takes an id and re-resolves npc/st since a deferred call may run after the NPC moved.
+local function commit_push_through(self_id, reason, single)
     local npc = level.object_by_id(self_id)
     if not is_valid_stalker(npc) then return end
     local st = npc_state[self_id]
@@ -988,19 +986,16 @@ local function do_commit_push_through(self_id, reason, single)
     set_squad_running(npc)
 end
 
--- Commit an NPC (and squad) to sprinting through. Stuck/field commits are admission-
--- controlled by other_squad_pushing_near (denied if another squad is pushing nearby). If the
--- committer was feeling, the whole commit is deferred FEEL_TO_RUSH_DELAY so a mid-render bolt
--- finishes before the state changes that would trip the skeleton-mutex deadlock.
-local function commit_push_through(npc, st, reason, single)
+-- Gate for a push_through commit; both guards exist to avoid the skeleton-mutex deadlock:
+--   * DENY outright if another squad is already pushing nearby (stuck/field commits only), or
+--   * DEFER by FEEL_TO_RUSH_DELAY if the NPC is mid bolt-throw, so its render finishes first.
+-- Otherwise commit now. The actual work is in commit_push_through.
+local function request_push_through(npc, st, reason, single)
     local self_pos = safe_call(npc.position, npc)
     local squad = safe_call(get_object_squad, npc)
     local self_id = npc:id()
     local my_identifier = squad and squad.id or self_id
 
-    -- Admission control guards only stuck/field commits. An in-contact (single) NPC is
-    -- already burning and past the bolt-throw phase, so it can't cause the bolt-render
-    -- deadlock the denial protects against -- denying it just lets it die in the zone.
     if not single and self_pos and other_squad_pushing_near(self_pos, my_identifier) then
         dbg_log("PUSH_THROUGH", "[%s] commit denied (other squad pushing in area)",
             npc:name() or "?")
@@ -1010,12 +1005,23 @@ local function commit_push_through(npc, st, reason, single)
     if st.feel_on then
         dbg_log("PUSH_THROUGH", "[%s] commit deferred (was feeling)", npc:name() or "?")
         CreateTimeEvent("mai_commit_delay", tostring(self_id), FEEL_TO_RUSH_DELAY, function()
-            do_commit_push_through(self_id, reason, single)
+            commit_push_through(self_id, reason, single)
             return true
         end)
     else
-        do_commit_push_through(self_id, reason, single)
+        commit_push_through(self_id, reason, single)
     end
+end
+
+-- True once the NPC has gone NPC_STUCK_TIMEOUT without STUCK_PROGRESS_DIST of net progress.
+-- Re-anchors on progress. anchor_key/time_key pick the state fields, so it serves both stalls.
+local function stuck_since(st, anchor_key, time_key, npc_pos, now)
+    if not st[anchor_key] or not st[time_key]
+       or npc_pos:distance_to(st[anchor_key]) >= STUCK_PROGRESS_DIST then
+        st[anchor_key], st[time_key] = npc_pos, now
+        return false
+    end
+    return (now - st[time_key]) > NPC_STUCK_TIMEOUT * 1000
 end
 
 local function update_npc_restrictions(npc, detection_radius)
@@ -1030,7 +1036,7 @@ local function update_npc_restrictions(npc, detection_radius)
     local npc_pos = get_position_copy(npc)
     if not npc_pos then return end
 
-    local radius = detection_radius or DETECTION_RADIUS
+    local radius = detection_radius
     local nearby = get_nearby_anomalies(npc_pos, radius)
 
     -- Safety net: force-enable movement for any NPC in a damage radius, so a scheme that
@@ -1107,24 +1113,18 @@ local function update_npc_restrictions(npc, detection_radius)
             set_squad_rush(npc, true)
             safe_call(npc.set_movement_type, npc, move.run)
 
-            -- Stuck detection: no STUCK_PROGRESS_DIST of net movement in NPC_STUCK_TIMEOUT
-            -- means the rush flag isn't moving the NPC. Escalate single -> field; a field-
-            -- stuck NPC gets a direct force-evict.
-            if not st.push_anchor_pos then
-                st.push_anchor_pos  = npc_pos
-                st.push_anchor_time = current_time
-            elseif npc_pos:distance_to(st.push_anchor_pos) >= STUCK_PROGRESS_DIST then
-                st.push_anchor_pos  = npc_pos
-                st.push_anchor_time = current_time
-            elseif (current_time - st.push_anchor_time) > NPC_STUCK_TIMEOUT * 1000 then
+            -- Stuck while sprinting? (no net progress for the timeout)
+            if stuck_since(st, "push_anchor_pos", "push_anchor_time", npc_pos, current_time) then
                 if st.push_through_single then
+                    -- escalate single -> field so it commits to crossing the whole cluster
                     st.push_through_single = nil
                     st.push_anchor_time    = current_time
                     dbg_log("PUSH_THROUGH", "[%s] stuck in single mode -> escalated to field",
                         npc:name() or "?")
                 else
-                    -- Field-stuck: reset the timer to avoid log spam. The per-tick direct
-                    -- run in the maintain block is the only lever to get it moving.
+                    -- Field-stuck: reset the timer to avoid log spam. The per-tick direct run
+                    -- (maintain block) is the only lever to get it moving.
+                    -- TODO: add further escalation if NPCs are still stuck
                     st.push_anchor_time = current_time
                     dbg_log("PUSH_THROUGH", "[%s] stuck in field mode", npc:name() or "?")
                 end
@@ -1138,7 +1138,7 @@ local function update_npc_restrictions(npc, detection_radius)
     -- (exits as soon as clear of the damage AoE rather than the whole cluster).
     if st.took_damage then
         st.took_damage = nil
-        commit_push_through(npc, st, "in contact", true)
+        request_push_through(npc, st, "in contact", true)
         return
     end
 
@@ -1267,7 +1267,7 @@ local function update_npc_restrictions(npc, detection_radius)
         if not same_restriction_set(detected, st.restrictions) then
             -- Only force an immediate reroute for a genuinely new anomaly. Shrinks, reshuffles,
             -- and dynamic zones blinking back on don't need one -- invalidating on every change
-            -- rebuilds the path each tick (the ~2s thrash/jerk).
+            -- rebuilds the path each tick and creates some thrash.
             local grew = has_new_anomaly(detected, known_before)
             clear_npc_restrictions(npc)
             safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
@@ -1277,18 +1277,9 @@ local function update_npc_restrictions(npc, detection_radius)
                 npc:name() or "?", #detected, grew and " (grew)" or "")
         end
 
-        -- Displacement-based stall timer: re-anchor on STUCK_PROGRESS_DIST of net ground so an
-        -- NPC circling in place (lots of motion, no progress) still trips the timeout.
-        if not st.restrict_anchor_pos or not st.restrict_start then
-            st.restrict_anchor_pos = npc_pos
-            st.restrict_start      = current_time
-        elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
-            st.restrict_anchor_pos = npc_pos
-            st.restrict_start      = current_time
-        end
-
-        if (current_time - st.restrict_start) > NPC_STUCK_TIMEOUT * 1000 then
-            commit_push_through(npc, st, "stuck in field", false)
+        -- Stuck routing around the field? Give up and sprint through.
+        if stuck_since(st, "restrict_anchor_pos", "restrict_start", npc_pos, current_time) then
+            request_push_through(npc, st, "stuck in field", false)
         end
     else
         -- Detected nothing this tick: clear restrictions and reset the stuck timer. FEEL
@@ -1738,8 +1729,7 @@ local function mai_periodic_tick()
     for _, st in pairs(npc_state) do
         if st.push_through then pushing = pushing + 1 end
     end
-    dbg_log("HEARTBEAT", "tick processed=%d pushing=%d cache=%d",
-        processed, pushing, #anomaly_cache)
+    dbg_log("HEARTBEAT", "tick processed=%d pushing=%d cache=%d", processed, pushing, #anomaly_cache)
 end
 
 local function schedule_next_tick()
