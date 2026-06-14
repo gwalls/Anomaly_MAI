@@ -1208,10 +1208,13 @@ local function update_npc_restrictions(npc, detection_radius)
             dbg_log("PUSH_THROUGH", "[%s] cleared (out of damage AoE)", npc:name() or "?")
             -- fall through to normal detection/restriction logic
         else
-            -- Still committed: maintain the rush flag each tick.
+            -- Still committed: keep restrictions/feel off and run. Direct set_movement_type
+            -- here (not just the squad rush flag, which only moves xr_reach_task NPCs) makes
+            -- propagated squadmates actually sprint instead of walking through defenseless.
             if st.restrictions then clear_npc_restrictions(npc) end
             set_npc_feel(npc, st, false)
             set_squad_rush(npc, true)
+            safe_call(npc.set_movement_type, npc, move.run)
 
             -- Stuck detection: no STUCK_PROGRESS_DIST of net movement in NPC_STUCK_TIMEOUT
             -- means the rush flag isn't moving the NPC. Escalate single -> field; a field-
