@@ -663,24 +663,8 @@ local function is_static_post_npc(npc)
     return true
 end
 
--- True if the NPC is committed to a loot target. Corpse-detection re-asserts
--- desired_position every Think, which the rush flag can't override, so these need force-evict.
-local function is_in_corpse_detection(npc)
-    if not npc then return false end
-    local id = npc:id()
-    local storage = db.storage[id]
-    if not storage then return false end
-    local cd = storage.corpse_detection
-    return cd and cd.selected_corpse_id ~= nil
-end
-
--- Schemes the rush flag alone can't move (own their positioning) -- need force-evict.
-local function should_force_evict(npc)
-    return is_in_static_post_scheme(npc) or is_in_corpse_detection(npc)
-end
-
 -- Exported for zz_allc0r3_mai_loot_guard to suppress corpse-detection while an NPC is
--- pushing through (so it doesn't re-target an in-anomaly corpse over the evict destination).
+-- pushing through (so it doesn't re-target an in-anomaly corpse).
 function is_npc_in_push_through(id)
     local st = npc_state[id]
     return st and st.push_through == true or false
@@ -844,88 +828,6 @@ local function get_nearby_anomalies(npc_pos, radius)
     return result
 end
 
-local function get_closest_anomaly(npc_pos)
-    if not npc_pos then return nil, 99999 end
-
-    local closest = nil
-    local closest_dist = 99999
-
-    for _, anom in ipairs(anomaly_cache) do
-        if anom.pos then
-            local dist = npc_pos:distance_to(anom.pos)
-            if dist < closest_dist then
-                closest_dist = dist
-                closest = anom
-            end
-        end
-    end
-
-    return closest, closest_dist
-end
-
--- Fallback escape directions (cardinal + diagonal, pre-normalized) tried when the primary
--- away-from-closest-anomaly direction lands in another anomaly.
-local FORCE_EVICT_FALLBACK_DIRS = {
-    { 1.000,  0.000}, {-1.000, 0.000}, {0.000,  1.000}, {0.000, -1.000},
-    { 0.707,  0.707}, {-0.707, 0.707}, {0.707, -0.707}, {-0.707, -0.707},
-}
-local FORCE_EVICT_DISTANCE = 15  -- meters to project the candidate escape point
-local FORCE_EVICT_SAFETY_MARGIN = 5  -- meters around safe vertex that must be anomaly-free
-
--- Find a navmesh vertex outside any anomaly's safety margin that the NPC can be sent to as
--- an emergency evacuation. Tries direction-away-from-closest-anomaly first, then 8 cardinal
--- / diagonal fallbacks. Returns (vertex_id, vertex_pos) or nil if nothing safe is reachable.
-local function find_safe_escape_vertex(npc_pos)
-    if not npc_pos then return nil end
-
-    local dirs = {}
-    local closest, _ = get_closest_anomaly(npc_pos)
-    if closest and closest.pos then
-        local dx = npc_pos.x - closest.pos.x
-        local dz = npc_pos.z - closest.pos.z
-        local len = math.sqrt(dx * dx + dz * dz)
-        if len >= 0.1 then
-            tinsert(dirs, {dx / len, dz / len})
-        end
-    end
-    for _, d in ipairs(FORCE_EVICT_FALLBACK_DIRS) do tinsert(dirs, d) end
-
-    for _, dir in ipairs(dirs) do
-        local target = vector():set(
-            npc_pos.x + dir[1] * FORCE_EVICT_DISTANCE,
-            npc_pos.y,
-            npc_pos.z + dir[2] * FORCE_EVICT_DISTANCE
-        )
-        local v_id = safe_call(level.vertex_id, target)
-        if v_id and v_id ~= 4294967295 then
-            local v_pos = safe_call(level.vertex_position, v_id)
-            if v_pos and not is_position_in_anomaly(v_pos, FORCE_EVICT_SAFETY_MARGIN) then
-                return v_id, v_pos
-            end
-        end
-    end
-    return nil
-end
-
--- Send a scheme-parked NPC to a safe vertex via send_to_nearest_accessible_vertex and set
--- run. Overrides idle/kamp/camper positioning the way combat/xr_danger does. Gated here (the
--- single choke point for every caller) by the force_evict_enabled MCM toggle.
-local function force_evict_to_safe_vertex(npc, npc_pos)
-    if not get_mcm_setting("force_evict_enabled", true) then return false end
-    local v_id, v_pos = find_safe_escape_vertex(npc_pos)
-    if not v_id or not v_pos then
-        dbg_log("EVICT", "[%s] no safe vertex found", npc:name() or "?")
-        return false
-    end
-    if utils_obj and utils_obj.send_to_nearest_accessible_vertex then
-        safe_call(utils_obj.send_to_nearest_accessible_vertex, npc, v_id, "mai_evict")
-    end
-    safe_call(npc.set_movement_type, npc, move.run)
-    dbg_log("EVICT", "[%s] -> vertex %d (%.1fm away)",
-        npc:name() or "?", v_id, npc_pos:distance_to(v_pos))
-    return true
-end
-
 -- [ Anomaly Avoidance ]--
 
 local function clear_npc_restrictions(npc)
@@ -1066,13 +968,6 @@ local function do_commit_push_through(self_id, reason, single)
 
     enter_push_through(npc, st, reason, single)
 
-    -- Scheme-parked NPCs (static-post or corpse-detection) ignore the rush flag, so give
-    -- them a concrete safe destination to contest their scheme's positioning.
-    if should_force_evict(npc) then
-        local npc_pos = safe_call(npc.position, npc)
-        if npc_pos then force_evict_to_safe_vertex(npc, npc_pos) end
-    end
-
     local squad = safe_call(get_object_squad, npc)
     if squad then
         for k in squad:squad_members() do
@@ -1084,10 +979,6 @@ local function do_commit_push_through(self_id, reason, single)
                     if not m_st then m_st = {}; npc_state[m_id] = m_st end
                     if not m_st.push_through then
                         enter_push_through(m, m_st, reason .. " (squadmate)", single)
-                        if should_force_evict(m) then
-                            local m_pos = safe_call(m.position, m)
-                            if m_pos then force_evict_to_safe_vertex(m, m_pos) end
-                        end
                     end
                 end
             end
@@ -1232,10 +1123,10 @@ local function update_npc_restrictions(npc, detection_radius)
                     dbg_log("PUSH_THROUGH", "[%s] stuck in single mode -> escalated to field",
                         npc:name() or "?")
                 else
+                    -- Field-stuck: reset the timer to avoid log spam. The per-tick direct
+                    -- run in the maintain block is the only lever to get it moving.
                     st.push_anchor_time = current_time
-                    dbg_log("PUSH_THROUGH", "[%s] stuck in field mode -> force-evict",
-                        npc:name() or "?")
-                    force_evict_to_safe_vertex(npc, npc_pos)
+                    dbg_log("PUSH_THROUGH", "[%s] stuck in field mode", npc:name() or "?")
                 end
             end
 

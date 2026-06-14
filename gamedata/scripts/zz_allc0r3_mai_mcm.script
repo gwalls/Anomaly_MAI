@@ -27,7 +27,6 @@ local defaults = {
     npc_stuck_timeout = 20,
     engine_avoidance = true,
     engine_feel_max_density = 3,
-    force_evict_enabled = true,
 
     -- damage
     enable_armor_damage_mult = true,
@@ -108,7 +107,7 @@ assign_group("detection", { "base_detection_radius", "cache_rebuild_delay", "bub
                             "bubble_radius", "restrictions_ignore_radius", "anomaly_memory_decay",
                             "legacy_anomaly_ignores" })
 assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance", "engine_feel_max_density",
-                            "force_evict_enabled", "block_corpse_loot_in_anomalies" })
+                            "block_corpse_loot_in_anomalies" })
 assign_group("damage",    { "enable_armor_damage_mult", "immune_zero_miss_chance", "combat_only_damage",
                             "walking_immunity", "standing_immunity",
                             "block_anomalies_on_corpses" })
@@ -191,7 +190,6 @@ function on_mcm_load()
                 { id = "npc_stuck_timeout",        type = "track", val = 2, min = 4, max = 120, step = 1, def = 20 },
                 { id = "engine_avoidance",         type = "check", val = 1, def = true },
                 { id = "engine_feel_max_density",  type = "track", val = 2, min = 1, max = 15, step = 1, def = 3 },
-                { id = "force_evict_enabled",      type = "check", val = 1, def = true },
                 { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             }),
 
