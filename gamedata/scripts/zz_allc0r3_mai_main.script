@@ -931,6 +931,33 @@ local function enter_push_through(npc, st, reason, single)
         npc:name() or "?", reason, single and "single" or "field")
 end
 
+-- Stop sprinting: drop the squad rush flag, restore walk (unless the NPC was already running
+-- before the commit), and clear the push_through state fields.
+local function exit_push_through(npc, st)
+    set_squad_rush(npc, false)
+    if not st.pre_push_run then
+        safe_call(npc.set_movement_type, npc, move.walk)
+    end
+    st.push_through        = nil
+    st.push_through_single = nil
+    st.push_anchor_pos     = nil
+    st.push_anchor_time    = nil
+    st.pre_push_run        = nil
+end
+
+-- Full avoidance teardown: drop restrictions and feel, exit any push_through, and clear the
+-- routing/probe/contact state. Used when an NPC leaves all fields or the interaction bubble.
+local function reset_avoidance_state(npc, st)
+    if st.restrictions then clear_npc_restrictions(npc) end
+    set_npc_feel(npc, st, false)
+    if st.push_through then exit_push_through(npc, st) end
+    st.restrict_start      = nil
+    st.restrict_anchor_pos = nil
+    st.probed              = nil
+    st.probe_until         = nil
+    st.took_damage         = nil
+end
+
 -- True if a DIFFERENT squad (or solo NPC) is pushing through within SQUAD_CONTENTION_RADIUS
 -- of `pos`. my_identifier is the squad id, or the NPC id for solo NPCs.
 local function other_squad_pushing_near(pos, my_identifier)
@@ -1049,24 +1076,7 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 
     if #nearby == 0 then
-        if st.restrictions then clear_npc_restrictions(npc) end
-        set_npc_feel(npc, st, false)
-        if st.push_through then
-            set_squad_rush(npc, false)
-            if not st.pre_push_run then
-                safe_call(npc.set_movement_type, npc, move.walk)
-            end
-        end
-        st.restrict_start      = nil
-        st.restrict_anchor_pos = nil
-        st.push_through        = nil
-        st.push_through_single = nil
-        st.push_anchor_pos     = nil
-        st.push_anchor_time    = nil
-        st.pre_push_run        = nil
-        st.probed              = nil
-        st.probe_until         = nil
-        st.took_damage         = nil
+        reset_avoidance_state(npc, st)
 
         -- Decay anomaly memory while NPC is away from all anomaly fields.
         local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
@@ -1074,11 +1084,11 @@ local function update_npc_restrictions(npc, detection_radius)
             local known = st.known_anomalies
             local cache_by_name = tick_cache_by_name
             for anom_name, mem in pairs(known) do
+                local stale = (current_time - mem.last_seen) > mem_decay_ms
                 local c_pos = cache_by_name[anom_name]
                 if not c_pos then
-                    known[anom_name] = nil
-                elseif npc_pos:distance_to(c_pos) > 2 * radius
-                        and (current_time - mem.last_seen) > mem_decay_ms then
+                    if stale then known[anom_name] = nil end
+                elseif npc_pos:distance_to(c_pos) > 2 * radius and stale then
                     known[anom_name] = nil
                 end
             end
@@ -1093,15 +1103,7 @@ local function update_npc_restrictions(npc, detection_radius)
         if st.push_through_single and not is_position_in_anomaly(npc_pos, MIN_RESTRICT_DISTANCE) then
             -- Single mode, clear of the damage AoE: end push_through and fall through to
             -- normal detection so restrictions can re-engage on any other nearby anomalies.
-            set_squad_rush(npc, false)
-            if not st.pre_push_run then
-                safe_call(npc.set_movement_type, npc, move.walk)
-            end
-            st.push_through        = nil
-            st.push_through_single = nil
-            st.push_anchor_pos     = nil
-            st.push_anchor_time    = nil
-            st.pre_push_run        = nil
+            exit_push_through(npc, st)
             dbg_log("PUSH_THROUGH", "[%s] cleared (out of damage AoE)", npc:name() or "?")
             -- fall through to normal detection/restriction logic
         else
@@ -1691,23 +1693,7 @@ local function mai_periodic_tick()
                     -- is the array index, NOT the object id. npc_state is keyed by real id.
                     local st = npc_state[npc:id()]
                     if st then
-                        if st.restrictions then clear_npc_restrictions(npc) end
-                        set_npc_feel(npc, st, false)
-                        if st.push_through then
-                            set_squad_rush(npc, false)
-                            if not st.pre_push_run then
-                                safe_call(npc.set_movement_type, npc, move.walk)
-                            end
-                        end
-                        st.restrict_start      = nil
-                        st.restrict_anchor_pos = nil
-                        st.push_through        = nil
-                        st.push_through_single = nil
-                        st.push_anchor_pos     = nil
-                        st.push_anchor_time    = nil
-                        st.pre_push_run        = nil
-                        st.probed              = nil
-                        st.probe_until         = nil
+                        reset_avoidance_state(npc, st)
                     end
                 end
 
