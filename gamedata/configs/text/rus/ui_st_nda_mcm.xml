@@ -1,506 +1,506 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <string_table>
-    <!-- MAI MCM Strings v2.6 -->
+    <!-- NDA MCM Strings v3.0 -->
     <!-- Following MCM naming convention: ui_mcm_(root_id)_(option_id) -->
     
     <!-- Menu name (shown in MCM sidebar) -->
-    <string id="ui_mcm_menu_mai">
-        <text>MAI - Anomaly Interaction</text>
+    <string id="ui_mcm_menu_nda">
+        <text>NDA - NPCs Die in Anomalies</text>
     </string>
     
     <!-- Header slide text -->
-    <string id="ui_mcm_mai_title">
-        <text>MAI v2.6 - Mutant/Anomaly Interaction</text>
+    <string id="ui_mcm_nda_title">
+        <text>NDA v3.0 - NPCs Die in Anomalies</text>
     </string>
     
     <!-- Section Titles -->
-    <string id="ui_mcm_mai_general_title">
+    <string id="ui_mcm_nda_general_title">
         <text>General Settings</text>
     </string>
-    <string id="ui_mcm_mai_debug_title">
+    <string id="ui_mcm_nda_debug_title">
         <text>Настройки отладки</text>
     </string>
-    <string id="ui_mcm_mai_detection_title">
+    <string id="ui_mcm_nda_detection_title">
         <text>Detection Settings</text>
     </string>
-    <string id="ui_mcm_mai_damage_title">
+    <string id="ui_mcm_nda_damage_title">
         <text>Damage Settings</text>
     </string>
-    <string id="ui_mcm_mai_movement_title">
+    <string id="ui_mcm_nda_movement_title">
         <text>Movement State Multipliers</text>
     </string>
-    <string id="ui_mcm_mai_rank_title">
+    <string id="ui_mcm_nda_rank_title">
         <text>Rank Base Miss Chance (%)</text>
     </string>
     
     <!-- ### General Settings ### -->
     
-    <string id="ui_mcm_mai_mod_enabled">
-        <text>Enable MAI</text>
+    <string id="ui_mcm_nda_mod_enabled">
+        <text>Enable NDA</text>
     </string>
-    <string id="ui_mcm_mai_mod_enabled_desc">
-        <text>Enable or disable the MAI mod entirely. When disabled, NPCs will ignore anomalies completely.</text>
+    <string id="ui_mcm_nda_mod_enabled_desc">
+        <text>Enable or disable the NDA mod entirely. When disabled, NPCs will ignore anomalies completely.</text>
     </string>
     
-    <string id="ui_mcm_mai_debug_mode">
+    <string id="ui_mcm_nda_debug_mode">
         <text>Debug Mode</text>
     </string>
-    <string id="ui_mcm_mai_debug_mode_desc">
+    <string id="ui_mcm_nda_debug_mode_desc">
         <text>Enable debug logging to console. Shows detection rolls, damage events, and death attribution.</text>
     </string>
     
-    <string id="ui_mcm_mai_verbose_debug">
+    <string id="ui_mcm_nda_verbose_debug">
         <text>Verbose Debug</text>
     </string>
-    <string id="ui_mcm_mai_verbose_debug_desc">
+    <string id="ui_mcm_nda_verbose_debug_desc">
         <text>Enable verbose debug logging. Shows update loop info, cache rebuilds, restriction changes. Very spammy!</text>
     </string>
     
-    <string id="ui_mcm_mai_show_debug_anomalies">
+    <string id="ui_mcm_nda_show_debug_anomalies">
         <text>Show Anomalies on Map</text>
     </string>
-    <string id="ui_mcm_mai_show_debug_anomalies_desc">
+    <string id="ui_mcm_nda_show_debug_anomalies_desc">
         <text>Show all cached anomalies on PDA map as markers. Useful for debugging pathfinding. Toggle off to remove markers.</text>
     </string>
     
-    <string id="ui_mcm_mai_cleanup_map_markers">
+    <string id="ui_mcm_nda_cleanup_map_markers">
         <text>Cleanup Old Markers</text>
     </string>
-    <string id="ui_mcm_mai_cleanup_map_markers_desc">
+    <string id="ui_mcm_nda_cleanup_map_markers_desc">
         <text>Remove leftover anomaly and death markers from previous sessions. Enable, apply, then disable. One-time cleanup action.</text>
     </string>
-    <string id="ui_mcm_mai_debug_death_news">
+    <string id="ui_mcm_nda_debug_death_news">
         <text>Anomaly Death News</text>
     </string>
-    <string id="ui_mcm_mai_debug_death_news_desc">
+    <string id="ui_mcm_nda_debug_death_news_desc">
         <text>Show a news popup whenever any stalker dies in an anomaly: their name, rank and faction, the anomaly that killed them, and the location (level + coordinates).</text>
     </string>
-    <string id="ui_mcm_mai_debug_death_map_spot">
+    <string id="ui_mcm_nda_debug_death_map_spot">
         <text>Anomaly Death Map Spot</text>
     </string>
-    <string id="ui_mcm_mai_debug_death_map_spot_desc">
+    <string id="ui_mcm_nda_debug_death_map_spot_desc">
         <text>Mark a stalker who died in an anomaly on the map with a temporary red spot. The marker auto-clears after 5 minutes (and does not persist into saves).</text>
     </string>
 
     <!-- ### Detection Settings ### -->
     
-    <string id="ui_mcm_mai_base_detection_radius">
+    <string id="ui_mcm_nda_base_detection_radius">
         <text>Detection Radius (m)</text>
     </string>
-    <string id="ui_mcm_mai_base_detection_radius_desc">
+    <string id="ui_mcm_nda_base_detection_radius_desc">
         <text>How far NPCs can detect anomalies. Higher = earlier detection but more pathfinding restrictions. Default: 30m</text>
     </string>
     
-    <string id="ui_mcm_mai_cache_rebuild_delay">
+    <string id="ui_mcm_nda_cache_rebuild_delay">
         <text>Cache Rebuild Delay (s)</text>
     </string>
-    <string id="ui_mcm_mai_cache_rebuild_delay_desc">
+    <string id="ui_mcm_nda_cache_rebuild_delay_desc">
         <text>Delay after surge/psy-storm before rebuilding anomaly cache. Needed for Arrival mod compatibility. Default: 2.5s</text>
     </string>
     
-    <string id="ui_mcm_mai_bubble_enabled">
+    <string id="ui_mcm_nda_bubble_enabled">
         <text>Interaction Bubble</text>
     </string>
-    <string id="ui_mcm_mai_bubble_enabled_desc">
+    <string id="ui_mcm_nda_bubble_enabled_desc">
         <text>Only NPCs within the bubble radius of the player interact with anomalies (can be damaged, avoid, etc.). NPCs outside the bubble are skipped from anomaly damage. Turn off to process all online NPCs regardless of distance.</text>
     </string>
-    <string id="ui_mcm_mai_bubble_radius">
+    <string id="ui_mcm_nda_bubble_radius">
         <text>Bubble Radius (m)</text>
     </string>
-    <string id="ui_mcm_mai_bubble_radius_desc">
+    <string id="ui_mcm_nda_bubble_radius_desc">
         <text>Radius of the interaction bubble around the player. NPCs beyond this distance are protected from anomaly damage. Default: 150m. (Only used when Interaction Bubble is on.)</text>
     </string>
     
-    <string id="ui_mcm_mai_restrictions_ignore_radius">
+    <string id="ui_mcm_nda_restrictions_ignore_radius">
         <text>Global Pathfinding</text>
     </string>
-    <string id="ui_mcm_mai_restrictions_ignore_radius_desc">
+    <string id="ui_mcm_nda_restrictions_ignore_radius_desc">
         <text>If enabled, all NPCs avoid anomalies regardless of distance. If disabled, only NPCs within effect radius get restrictions.</text>
     </string>
 
-    <string id="ui_mcm_mai_anomaly_memory_decay">
+    <string id="ui_mcm_nda_anomaly_memory_decay">
         <text>Anomaly Memory (s)</text>
     </string>
-    <string id="ui_mcm_mai_anomaly_memory_decay_desc">
+    <string id="ui_mcm_nda_anomaly_memory_decay_desc">
         <text>How long an NPC remembers a detected anomaly after leaving the area. Remembered anomalies bypass the miss roll, so avoidance stays reliable. Set to 0 to disable memory entirely. Default: 30s</text>
     </string>
 
-    <string id="ui_mcm_mai_legacy_anomaly_ignores">
+    <string id="ui_mcm_nda_legacy_anomaly_ignores">
         <text>Старые жёсткие исключения</text>
     </string>
-    <string id="ui_mcm_mai_legacy_anomaly_ignores_desc">
-        <text>Продолжать пропускать аномальные поля по конкретным локациям, которые были жёстко прописаны, когда обход не мог безопасно проводить НПС вокруг плотных или замкнутых скоплений (Кордон, Свалка, Дикая территория, Армейские склады). Выключите, чтобы MAI управлял этими полями текущим конвейером (обход, подавление урона, и чтобы защита от лута трупов видела тела, упавшие внутри них). Аномалии без радиуса пропускаются всегда. По умолчанию: ВКЛ</text>
+    <string id="ui_mcm_nda_legacy_anomaly_ignores_desc">
+        <text>Продолжать пропускать аномальные поля по конкретным локациям, которые были жёстко прописаны, когда обход не мог безопасно проводить НПС вокруг плотных или замкнутых скоплений (Кордон, Свалка, Дикая территория, Армейские склады). Выключите, чтобы NDA управлял этими полями текущим конвейером (обход, подавление урона, и чтобы защита от лута трупов видела тела, упавшие внутри них). Аномалии без радиуса пропускаются всегда. По умолчанию: ВКЛ</text>
     </string>
 
     <!-- ### Damage Settings ### -->
     
-    <string id="ui_mcm_mai_enable_armor_damage_mult">
+    <string id="ui_mcm_nda_enable_armor_damage_mult">
         <text>Outfit Protection</text>
     </string>
-    <string id="ui_mcm_mai_enable_armor_damage_mult_desc">
+    <string id="ui_mcm_nda_enable_armor_damage_mult_desc">
         <text>Apply damage reduction based on NPC outfit. Reads protection values from outfit configs (burn, shock, chemical, etc).</text>
     </string>
     
-    <string id="ui_mcm_mai_immune_zero_miss_chance">
+    <string id="ui_mcm_nda_immune_zero_miss_chance">
         <text>Immune at 0% Miss</text>
     </string>
-    <string id="ui_mcm_mai_immune_zero_miss_chance_desc">
+    <string id="ui_mcm_nda_immune_zero_miss_chance_desc">
         <text>NPCs with 0% base miss chance become completely immune to anomaly damage. Safety net for veterans.</text>
     </string>
     
-    <string id="ui_mcm_mai_combat_only_damage">
+    <string id="ui_mcm_nda_combat_only_damage">
         <text>Урон только в бою</text>
     </string>
-    <string id="ui_mcm_mai_combat_only_damage_desc">
+    <string id="ui_mcm_nda_combat_only_damage_desc">
         <text>НПС получают урон от аномалий только в бою (есть враг). Вне боя они по-прежнему обнаруживают и обходят аномалии, но не получают урон от зон, мимо которых проходят. Пока этот параметр ВКЛ, он переопределяет "Неуязвимость идущих НПС", "Стоящие НПС неуязвимы", "Период защиты" и множители промаха по движению/рангу (вне боя НПС и так неуязвимы); выключите его, чтобы использовать эти настройки. По умолчанию: ВКЛ</text>
     </string>
 
-    <string id="ui_mcm_mai_block_anomalies_on_corpses">
+    <string id="ui_mcm_nda_block_anomalies_on_corpses">
         <text>Block on Corpses</text>
     </string>
-    <string id="ui_mcm_mai_block_anomalies_on_corpses_desc">
+    <string id="ui_mcm_nda_block_anomalies_on_corpses_desc">
         <text>Prevent anomalies from activating on dead bodies. Stops ragdoll physics glitches and improves performance.</text>
     </string>
 
-    <string id="ui_mcm_mai_block_corpse_loot_in_anomalies">
+    <string id="ui_mcm_nda_block_corpse_loot_in_anomalies">
         <text>Block Loot in Anomalies</text>
     </string>
-    <string id="ui_mcm_mai_block_corpse_loot_in_anomalies_desc">
+    <string id="ui_mcm_nda_block_corpse_loot_in_anomalies_desc">
         <text>Prevent NPCs from walking into anomaly fields to loot corpses. Stops chain-deaths where stalkers follow each other into anomalies. Default: ON</text>
     </string>
     
     <!-- ### Movement State Multipliers ### -->
     
-    <string id="ui_mcm_mai_walking_immunity">
+    <string id="ui_mcm_nda_walking_immunity">
         <text>Walking NPCs Immune</text>
     </string>
-    <string id="ui_mcm_mai_walking_immunity_desc">
+    <string id="ui_mcm_nda_walking_immunity_desc">
         <text>While walking and not in combat, NPCs always detect and avoid anomalies and take no anomaly damage. Covers only the walking state: standing has its own toggle, and running and combat roll the Movement State Multipliers. Default: ON</text>
     </string>
-    <string id="ui_mcm_mai_standing_immunity">
+    <string id="ui_mcm_nda_standing_immunity">
         <text>Стоящие НПС неуязвимы</text>
     </string>
-    <string id="ui_mcm_mai_standing_immunity_desc">
+    <string id="ui_mcm_nda_standing_immunity_desc">
         <text>Стоя на месте и вне боя, НПС всегда обнаруживают и обходят аномалии и не получают урон от них. Защищает НПС, чья точка поста или костра находится прямо в аномальном поле: они упорно возвращаются на эту точку и иначе погибали бы там один за другим. Работает независимо от опции неуязвимости идущих НПС, так что ходьба и бег могут оставаться смертельными. По умолчанию: ВКЛ</text>
     </string>
-    <string id="ui_mcm_mai_safe_grace_period">
+    <string id="ui_mcm_nda_safe_grace_period">
         <text>Период защиты (сек)</text>
     </string>
-    <string id="ui_mcm_mai_safe_grace_period_desc">
+    <string id="ui_mcm_nda_safe_grace_period_desc">
         <text>После того как спокойный НПС (стоит/идёт, без врага) переходит на бег, он остаётся неуязвим к урону от аномалий ещё столько секунд, чтобы бегущий сталкер не получал урон мгновенно. В бою защита не действует. 0 отключает период защиты. По умолчанию: 10</text>
     </string>
-    <string id="ui_mcm_mai_standing_miss_multiplier">
+    <string id="ui_mcm_nda_standing_miss_multiplier">
         <text>Standing</text>
     </string>
-    <string id="ui_mcm_mai_standing_miss_multiplier_desc">
+    <string id="ui_mcm_nda_standing_miss_multiplier_desc">
         <text>Miss chance multiplier when NPC is standing still. Lower = more careful observation. Default: 0.3x</text>
     </string>
     
-    <string id="ui_mcm_mai_walking_miss_multiplier">
+    <string id="ui_mcm_nda_walking_miss_multiplier">
         <text>Walking</text>
     </string>
-    <string id="ui_mcm_mai_walking_miss_multiplier_desc">
+    <string id="ui_mcm_nda_walking_miss_multiplier_desc">
         <text>Miss chance multiplier when NPC is walking. Default: 0.6x</text>
     </string>
     
-    <string id="ui_mcm_mai_running_miss_multiplier">
+    <string id="ui_mcm_nda_running_miss_multiplier">
         <text>Running</text>
     </string>
-    <string id="ui_mcm_mai_running_miss_multiplier_desc">
+    <string id="ui_mcm_nda_running_miss_multiplier_desc">
         <text>Miss chance multiplier when NPC is running. Higher = more likely to miss anomalies. Default: 1.2x</text>
     </string>
     
-    <string id="ui_mcm_mai_combat_miss_multiplier">
+    <string id="ui_mcm_nda_combat_miss_multiplier">
         <text>Combat</text>
     </string>
-    <string id="ui_mcm_mai_combat_miss_multiplier_desc">
+    <string id="ui_mcm_nda_combat_miss_multiplier_desc">
         <text>Miss chance multiplier when NPC is in combat. Distracted NPCs are much more likely to run into anomalies. Default: 3.0x</text>
     </string>
     
     <!-- ### Rank Settings ### -->
     
-    <string id="ui_mcm_mai_rank_novice_miss_chance">
+    <string id="ui_mcm_nda_rank_novice_miss_chance">
         <text>Novice</text>
     </string>
-    <string id="ui_mcm_mai_rank_novice_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_novice_miss_chance_desc">
         <text>Base miss chance for Novice stalkers. Higher = more likely to walk into anomalies. Default: 75%</text>
     </string>
     
-    <string id="ui_mcm_mai_rank_trainee_miss_chance">
+    <string id="ui_mcm_nda_rank_trainee_miss_chance">
         <text>Trainee</text>
     </string>
-    <string id="ui_mcm_mai_rank_trainee_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_trainee_miss_chance_desc">
         <text>Base miss chance for Trainee stalkers. Default: 50%</text>
     </string>
     
-    <string id="ui_mcm_mai_rank_experienced_miss_chance">
+    <string id="ui_mcm_nda_rank_experienced_miss_chance">
         <text>Experienced</text>
     </string>
-    <string id="ui_mcm_mai_rank_experienced_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_experienced_miss_chance_desc">
         <text>Base miss chance for Experienced stalkers. Default: 30%</text>
     </string>
     
-    <string id="ui_mcm_mai_rank_professional_miss_chance">
+    <string id="ui_mcm_nda_rank_professional_miss_chance">
         <text>Professional</text>
     </string>
-    <string id="ui_mcm_mai_rank_professional_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_professional_miss_chance_desc">
         <text>Base miss chance for Professional stalkers. Default: 15%</text>
     </string>
     
-    <string id="ui_mcm_mai_rank_veteran_miss_chance">
+    <string id="ui_mcm_nda_rank_veteran_miss_chance">
         <text>Veteran</text>
     </string>
-    <string id="ui_mcm_mai_rank_veteran_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_veteran_miss_chance_desc">
         <text>Base miss chance for Veteran stalkers. 0% = never walks into anomalies. Default: 10%</text>
     </string>
     
-    <string id="ui_mcm_mai_rank_expert_miss_chance">
+    <string id="ui_mcm_nda_rank_expert_miss_chance">
         <text>Expert</text>
     </string>
-    <string id="ui_mcm_mai_rank_expert_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_expert_miss_chance_desc">
         <text>Base miss chance for Expert stalkers. Default: 5%</text>
     </string>
     
-    <string id="ui_mcm_mai_rank_master_miss_chance">
+    <string id="ui_mcm_nda_rank_master_miss_chance">
         <text>Master</text>
     </string>
-    <string id="ui_mcm_mai_rank_master_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_master_miss_chance_desc">
         <text>Base miss chance for Master stalkers. Default: 0%</text>
     </string>
     
-    <string id="ui_mcm_mai_rank_legend_miss_chance">
+    <string id="ui_mcm_nda_rank_legend_miss_chance">
         <text>Legend</text>
     </string>
-    <string id="ui_mcm_mai_rank_legend_miss_chance_desc">
+    <string id="ui_mcm_nda_rank_legend_miss_chance_desc">
         <text>Base miss chance for Legend stalkers. Default: 0%</text>
     </string>
 
     <!-- ### Anomaly Kill Rate Limit ### -->
 
-    <string id="ui_mcm_mai_kill_rate_title">
+    <string id="ui_mcm_nda_kill_rate_title">
         <text>Лимит убийств аномалиями</text>
     </string>
-    <string id="ui_mcm_mai_kill_rate_limit">
+    <string id="ui_mcm_nda_kill_rate_limit">
         <text>Включить лимит убийств</text>
     </string>
-    <string id="ui_mcm_mai_kill_rate_limit_desc">
+    <string id="ui_mcm_nda_kill_rate_limit_desc">
         <text>Ограничивает, сколько НПС аномалии могут убить в минуту, отдельно по фракции и по рангу. НПС защищён от урона аномалий, как только ЛИБО его фракция, ЛИБО его ранг достигает своего лимита за скользящую минуту. Каждый лимит ниже: 0 = без ограничения. Общий выключатель для всех лимитов. По умолчанию: ВКЛ</text>
     </string>
 
-    <string id="ui_mcm_mai_kill_cap_global">
+    <string id="ui_mcm_nda_kill_cap_global">
         <text>Всего убийств/мин (все НПС)</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_global_desc">
+    <string id="ui_mcm_nda_kill_cap_global_desc">
         <text>Универсальный лимит на общее число убийств аномалиями в минуту по всем НПС, независимо от фракции и ранга. Как только за скользящую минуту от аномалий погибает столько НПС, все НПС перестают получать урон от аномалий, пока старые убийства не выйдут за пределы окна. Это основной лимит верхнего уровня; лимиты по фракции и рангу ниже работают дополнительно. 0 = без ограничения. По умолчанию: 3</text>
     </string>
 
-    <string id="ui_mcm_mai_kill_cap_faction_header">
+    <string id="ui_mcm_nda_kill_cap_faction_header">
         <text>По фракциям</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_header">
+    <string id="ui_mcm_nda_kill_cap_rank_header">
         <text>По рангам</text>
     </string>
 
-    <string id="ui_mcm_mai_kill_cap_faction_stalker">
+    <string id="ui_mcm_nda_kill_cap_faction_stalker">
         <text>Одиночки уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_stalker_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_stalker_desc">
         <text>Макс. Одиночек, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_bandit">
+    <string id="ui_mcm_nda_kill_cap_faction_bandit">
         <text>Бандиты уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_bandit_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_bandit_desc">
         <text>Макс. Бандитов, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_dolg">
+    <string id="ui_mcm_nda_kill_cap_faction_dolg">
         <text>Долг уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_dolg_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_dolg_desc">
         <text>Макс. бойцов Долга, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_freedom">
+    <string id="ui_mcm_nda_kill_cap_faction_freedom">
         <text>Свобода уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_freedom_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_freedom_desc">
         <text>Макс. бойцов Свободы, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_monolith">
+    <string id="ui_mcm_nda_kill_cap_faction_monolith">
         <text>Монолит уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_monolith_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_monolith_desc">
         <text>Макс. бойцов Монолита, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_army">
+    <string id="ui_mcm_nda_kill_cap_faction_army">
         <text>Военные уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_army_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_army_desc">
         <text>Макс. Военных, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_ecolog">
+    <string id="ui_mcm_nda_kill_cap_faction_ecolog">
         <text>Учёные уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_ecolog_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_ecolog_desc">
         <text>Макс. Учёных, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_killer">
+    <string id="ui_mcm_nda_kill_cap_faction_killer">
         <text>Наёмники уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_killer_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_killer_desc">
         <text>Макс. Наёмников, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_greh">
+    <string id="ui_mcm_nda_kill_cap_faction_greh">
         <text>Грех уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_greh_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_greh_desc">
         <text>Макс. бойцов Греха, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_renegade">
+    <string id="ui_mcm_nda_kill_cap_faction_renegade">
         <text>Ренегаты уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_renegade_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_renegade_desc">
         <text>Макс. Ренегатов, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_isg">
+    <string id="ui_mcm_nda_kill_cap_faction_isg">
         <text>ИСГ уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_isg_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_isg_desc">
         <text>Макс. бойцов ИСГ, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_csky">
+    <string id="ui_mcm_nda_kill_cap_faction_csky">
         <text>Чистое Небо уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_csky_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_csky_desc">
         <text>Макс. бойцов Чистого Неба, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_zombied">
+    <string id="ui_mcm_nda_kill_cap_faction_zombied">
         <text>Зомби уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_faction_zombied_desc">
+    <string id="ui_mcm_nda_kill_cap_faction_zombied_desc">
         <text>Макс. Зомби, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
 
-    <string id="ui_mcm_mai_kill_cap_rank_novice">
+    <string id="ui_mcm_nda_kill_cap_rank_novice">
         <text>Новичок уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_novice_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_novice_desc">
         <text>Макс. Новичков, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_trainee">
+    <string id="ui_mcm_nda_kill_cap_rank_trainee">
         <text>Стажёр уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_trainee_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_trainee_desc">
         <text>Макс. Стажёров, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_experienced">
+    <string id="ui_mcm_nda_kill_cap_rank_experienced">
         <text>Опытный уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_experienced_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_experienced_desc">
         <text>Макс. Опытных, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_professional">
+    <string id="ui_mcm_nda_kill_cap_rank_professional">
         <text>Профи уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_professional_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_professional_desc">
         <text>Макс. Профи, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_veteran">
+    <string id="ui_mcm_nda_kill_cap_rank_veteran">
         <text>Ветеран уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_veteran_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_veteran_desc">
         <text>Макс. Ветеранов, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_expert">
+    <string id="ui_mcm_nda_kill_cap_rank_expert">
         <text>Эксперт уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_expert_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_expert_desc">
         <text>Макс. Экспертов, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_master">
+    <string id="ui_mcm_nda_kill_cap_rank_master">
         <text>Мастер уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_master_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_master_desc">
         <text>Макс. Мастеров, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_legend">
+    <string id="ui_mcm_nda_kill_cap_rank_legend">
         <text>Легенда уб/мин</text>
     </string>
-    <string id="ui_mcm_mai_kill_cap_rank_legend_desc">
+    <string id="ui_mcm_nda_kill_cap_rank_legend_desc">
         <text>Макс. Легенд, убитых аномалиями в минуту. 0 = без ограничения.</text>
     </string>
 
     <!-- ### Avoidance Settings ### -->
 
-    <string id="ui_mcm_mai_pathfinding_title">
+    <string id="ui_mcm_nda_pathfinding_title">
         <text>Avoidance Settings</text>
     </string>
 
-    <string id="ui_mcm_mai_npc_stuck_timeout">
+    <string id="ui_mcm_nda_npc_stuck_timeout">
         <text>Stuck Timeout (s)</text>
     </string>
-    <string id="ui_mcm_mai_npc_stuck_timeout_desc">
+    <string id="ui_mcm_nda_npc_stuck_timeout_desc">
         <text>Seconds an NPC can try to route around a field without making net progress (e.g. walking in circles) before it commits to sprinting straight through, taking damage. Default: 20</text>
     </string>
 
-    <string id="ui_mcm_mai_engine_avoidance">
+    <string id="ui_mcm_nda_engine_avoidance">
         <text>Engine Avoidance (feel)</text>
     </string>
-    <string id="ui_mcm_mai_engine_avoidance_desc">
+    <string id="ui_mcm_nda_engine_avoidance_desc">
         <text>In sparse anomaly fields, let the engine's native feel system route NPCs around anomalies (they also throw bolts). This avoids ALL anomaly types, unlike script restrictions which only block types whose shape catches the navmesh (acidic/electric are not blockable). Restricted to sparse fields because feel can freeze or crash in dense/enclosed ones; turn OFF for maximum stability. Default: ON</text>
     </string>
 
-    <string id="ui_mcm_mai_engine_feel_max_density">
+    <string id="ui_mcm_nda_engine_feel_max_density">
         <text>Feel Density Limit</text>
     </string>
-    <string id="ui_mcm_mai_engine_feel_max_density_desc">
+    <string id="ui_mcm_nda_engine_feel_max_density_desc">
         <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 3</text>
     </string>
 
     <!-- ### Community Exclusions ### -->
 
-    <string id="ui_mcm_mai_community_excl_title">
+    <string id="ui_mcm_nda_community_excl_title">
         <text>Community Exclusions</text>
     </string>
 
-    <string id="ui_mcm_mai_greh_ignore_damage">
+    <string id="ui_mcm_nda_greh_ignore_damage">
         <text>Sin: Ignore anomaly damage</text>
     </string>
-    <string id="ui_mcm_mai_greh_ignore_damage_desc">
+    <string id="ui_mcm_nda_greh_ignore_damage_desc">
         <text>Sin (greh) faction NPCs are immune to anomaly damage. Default: ON</text>
     </string>
 
-    <string id="ui_mcm_mai_greh_ignore_restrictions">
+    <string id="ui_mcm_nda_greh_ignore_restrictions">
         <text>Sin: Ignore anomaly avoidance</text>
     </string>
-    <string id="ui_mcm_mai_greh_ignore_restrictions_desc">
+    <string id="ui_mcm_nda_greh_ignore_restrictions_desc">
         <text>Sin (greh) faction NPCs do not get pathfinding restrictions to avoid anomalies. Default: ON</text>
     </string>
 
-    <string id="ui_mcm_mai_monolith_ignore_damage">
+    <string id="ui_mcm_nda_monolith_ignore_damage">
         <text>Monolith: Ignore anomaly damage</text>
     </string>
-    <string id="ui_mcm_mai_monolith_ignore_damage_desc">
+    <string id="ui_mcm_nda_monolith_ignore_damage_desc">
         <text>Monolith faction NPCs are immune to anomaly damage (protected by faith). Default: ON</text>
     </string>
 
-    <string id="ui_mcm_mai_monolith_ignore_restrictions">
+    <string id="ui_mcm_nda_monolith_ignore_restrictions">
         <text>Monolith: Ignore anomaly avoidance</text>
     </string>
-    <string id="ui_mcm_mai_monolith_ignore_restrictions_desc">
+    <string id="ui_mcm_nda_monolith_ignore_restrictions_desc">
         <text>Monolith faction NPCs do not get pathfinding restrictions to avoid anomalies. Default: OFF</text>
     </string>
 
-    <string id="ui_mcm_mai_zombied_ignore_damage">
+    <string id="ui_mcm_nda_zombied_ignore_damage">
         <text>Зомбированные: игнорировать урон аномалий</text>
     </string>
-    <string id="ui_mcm_mai_zombied_ignore_damage_desc">
+    <string id="ui_mcm_nda_zombied_ignore_damage_desc">
         <text>Зомбированные сталкеры неуязвимы к урону от аномалий. По умолчанию: ВЫКЛ</text>
     </string>
 
-    <string id="ui_mcm_mai_zombied_ignore_restrictions">
+    <string id="ui_mcm_nda_zombied_ignore_restrictions">
         <text>Зомбированные: игнорировать обход аномалий</text>
     </string>
-    <string id="ui_mcm_mai_zombied_ignore_restrictions_desc">
+    <string id="ui_mcm_nda_zombied_ignore_restrictions_desc">
         <text>Зомбированные сталкеры не получают ограничений поиска пути для обхода аномалий: безмозглые, бредут напрямик. По умолчанию: ВКЛ</text>
     </string>
 

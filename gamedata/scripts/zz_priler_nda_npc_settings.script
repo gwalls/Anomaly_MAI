@@ -1,10 +1,10 @@
 --[[
-    MAI NPC Settings
+    NDA NPC Settings
     
     This file contains:
     - demonized_ignore_npc: List of specific NPCs to ignore (traders, quest givers, story NPCs)
-    - mai_always_full_ignore_community: Communities completely ignored (no restrictions, no damage)
-    - mai_always_damage_ignore_community: Communities that ignore damage but still get restrictions
+    - nda_always_full_ignore_community: Communities completely ignored (no restrictions, no damage)
+    - nda_always_damage_ignore_community: Communities that ignore damage but still get restrictions
     
     Note: Faction/rank detection settings have been moved to MCM
 --]]
@@ -727,16 +727,16 @@ redemption_task_6_mono_dead_2 = true,
 --]]
 
 -- Communities that don't evade AND don't take damage (fully protected)
-mai_always_full_ignore_community = {
+nda_always_full_ignore_community = {
     ["greh"] = true,
 }
 
 -- Communities that don't evade but DO take damage (mindless)
-mai_no_evade_community = {
+nda_no_evade_community = {
     ["zombied"] = true,
 }
 
 -- Communities that evade but DON'T take damage (protected believers)
-mai_no_damage_community = {
+nda_no_damage_community = {
     ["monolith"] = true,
 }

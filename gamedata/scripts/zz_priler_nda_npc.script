@@ -1,7 +1,7 @@
 --[[
-    MAI NPC Script - Placeholder
+    NDA NPC Script - Placeholder
     
-    Death handling is now done in zz_allc0r3_mai_main.script
+    Death handling is now done in zz_priler_nda_main.script
     This file kept for compatibility in case other scripts reference it
 --]]
 

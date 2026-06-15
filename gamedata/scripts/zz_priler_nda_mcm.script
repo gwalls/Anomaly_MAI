@@ -1,4 +1,4 @@
--- MAI MCM Options
+-- NDA MCM Options
 
 -- [ Defaults ]--
 
@@ -94,7 +94,7 @@ local defaults = {
 -- [ Helpers ]--
 
 -- Options are grouped into MCM subcategories (sh = true). Subcategorizing nests the stored
--- key as "mai/<group>/<id>", so get_config rebuilds that path from a flat id -- every call
+-- key as "nda/<group>/<id>", so get_config rebuilds that path from a flat id -- every call
 -- site (main script, loot_guard, etc.) keeps passing the bare option id, unaware of the group.
 local OPTION_GROUP = {}
 local function assign_group(group, ids)
@@ -131,8 +131,8 @@ assign_group("community", { "greh_ignore_damage", "greh_ignore_restrictions",
 
 local function full_key(key)
     local g = OPTION_GROUP[key]
-    if g then return "mai/" .. g .. "/" .. key end
-    return "mai/" .. key
+    if g then return "nda/" .. g .. "/" .. key end
+    return "nda/" .. key
 end
 
 function get_config(key)
@@ -159,10 +159,10 @@ local function subcategory(id, title_key, options)
     for i = 1, #options do
         local opt = options[i]
         -- Nesting under a tab makes MCM derive each option's label string id from the full
-        -- path (ui_mcm_mai_<tab>_<id>). Pin it back to the flat ui_mcm_mai_<id> the string
+        -- path (ui_mcm_nda_<tab>_<id>). Pin it back to the flat ui_mcm_nda_<id> the string
         -- table already defines: hint replaces everything after the ui_mcm_ prefix, and the
         -- tooltip then resolves to hint .. "_desc". One hint per option, no per-option edits.
-        if opt.id and opt.hint == nil then opt.hint = "mai_" .. opt.id end
+        if opt.id and opt.hint == nil then opt.hint = "nda_" .. opt.id end
         gr[#gr + 1] = opt
     end
     return { id = id, sh = true, text = title_key, gr = gr }
@@ -170,13 +170,13 @@ end
 
 function on_mcm_load()
     return {
-        id = "mai",
+        id = "nda",
         gr = {
-            subcategory("general", "ui_mcm_mai_general_title", {
+            subcategory("general", "ui_mcm_nda_general_title", {
                 { id = "mod_enabled",           type = "check", val = 1, def = true },
             }),
 
-            subcategory("detection", "ui_mcm_mai_detection_title", {
+            subcategory("detection", "ui_mcm_nda_detection_title", {
                 { id = "base_detection_radius", type = "track", val = 2, min = 10, max = 50, step = 5, def = 30 },
                 { id = "cache_rebuild_delay",   type = "track", val = 2, min = 0, max = 5, step = 0.5, def = 2.5 },
                 { id = "bubble_enabled",        type = "check", val = 1, def = true },
@@ -186,14 +186,14 @@ function on_mcm_load()
                 { id = "legacy_anomaly_ignores", type = "check", val = 1, def = true },
             }),
 
-            subcategory("avoidance", "ui_mcm_mai_pathfinding_title", {
+            subcategory("avoidance", "ui_mcm_nda_pathfinding_title", {
                 { id = "npc_stuck_timeout",        type = "track", val = 2, min = 4, max = 120, step = 1, def = 20 },
                 { id = "engine_avoidance",         type = "check", val = 1, def = true },
                 { id = "engine_feel_max_density",  type = "track", val = 2, min = 1, max = 15, step = 1, def = 3 },
                 { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             }),
 
-            subcategory("damage", "ui_mcm_mai_damage_title", {
+            subcategory("damage", "ui_mcm_nda_damage_title", {
                 { id = "enable_armor_damage_mult",       type = "check", val = 1, def = true },
                 { id = "immune_zero_miss_chance",        type = "check", val = 1, def = true },
                 { id = "combat_only_damage",             type = "check", val = 1, def = true },
@@ -202,7 +202,7 @@ function on_mcm_load()
                 { id = "block_anomalies_on_corpses",     type = "check", val = 1, def = true },
             }),
 
-            subcategory("movement", "ui_mcm_mai_movement_title", {
+            subcategory("movement", "ui_mcm_nda_movement_title", {
                 { id = "safe_grace_period",        type = "track", val = 2, min = 0, max = 30, step = 1, def = 10 },
                 { id = "standing_miss_multiplier", type = "track", val = 2, min = 0.1, max = 1.0, step = 0.1, def = 0.3 },
                 { id = "walking_miss_multiplier",  type = "track", val = 2, min = 0.1, max = 1.5, step = 0.1, def = 0.6 },
@@ -210,7 +210,7 @@ function on_mcm_load()
                 { id = "combat_miss_multiplier",   type = "track", val = 2, min = 1.0, max = 5.0, step = 0.5, def = 3.0 },
             }),
 
-            subcategory("ranks", "ui_mcm_mai_rank_title", {
+            subcategory("ranks", "ui_mcm_nda_rank_title", {
                 { id = "rank_novice_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 75 },
                 { id = "rank_trainee_miss_chance",      type = "track", val = 2, min = 0, max = 100, step = 5, def = 50 },
                 { id = "rank_experienced_miss_chance",  type = "track", val = 2, min = 0, max = 100, step = 5, def = 30 },
@@ -221,11 +221,11 @@ function on_mcm_load()
                 { id = "rank_legend_miss_chance",       type = "track", val = 2, min = 0, max = 100, step = 5, def = 0 },
             }),
 
-            subcategory("killrate", "ui_mcm_mai_kill_rate_title", {
+            subcategory("killrate", "ui_mcm_nda_kill_rate_title", {
                 { id = "kill_rate_limit", type = "check", val = 1, def = true },
                 { id = "kill_cap_global", type = "track", val = 2, min = 0, max = 50, step = 1, def = 3 },
 
-                { id = "header_faction_caps", type = "title", text = "ui_mcm_mai_kill_cap_faction_header", align = "l" },
+                { id = "header_faction_caps", type = "title", text = "ui_mcm_nda_kill_cap_faction_header", align = "l" },
                 { id = "kill_cap_faction_stalker",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_faction_bandit",   type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_faction_dolg",     type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
@@ -240,7 +240,7 @@ function on_mcm_load()
                 { id = "kill_cap_faction_csky",     type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_faction_zombied",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
 
-                { id = "header_rank_caps", type = "title", text = "ui_mcm_mai_kill_cap_rank_header", align = "l" },
+                { id = "header_rank_caps", type = "title", text = "ui_mcm_nda_kill_cap_rank_header", align = "l" },
                 { id = "kill_cap_rank_novice",       type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_rank_trainee",      type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
                 { id = "kill_cap_rank_experienced",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
@@ -251,7 +251,7 @@ function on_mcm_load()
                 { id = "kill_cap_rank_legend",       type = "track", val = 2, min = 0, max = 50, step = 1, def = 0 },
             }),
 
-            subcategory("community", "ui_mcm_mai_community_excl_title", {
+            subcategory("community", "ui_mcm_nda_community_excl_title", {
                 { id = "greh_ignore_damage",           type = "check", val = 1, def = true },
                 { id = "greh_ignore_restrictions",     type = "check", val = 1, def = true },
                 { id = "monolith_ignore_damage",       type = "check", val = 1, def = true },
@@ -260,7 +260,7 @@ function on_mcm_load()
                 { id = "zombied_ignore_restrictions",  type = "check", val = 1, def = true },
             }),
 
-            subcategory("debug", "ui_mcm_mai_debug_title", {
+            subcategory("debug", "ui_mcm_nda_debug_title", {
                 { id = "debug_mode",            type = "check", val = 1, def = false },
                 { id = "verbose_debug",         type = "check", val = 1, def = false },
                 { id = "show_debug_anomalies",  type = "check", val = 1, def = false },

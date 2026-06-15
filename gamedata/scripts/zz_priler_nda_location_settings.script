@@ -1,13 +1,13 @@
 --[[
-    MAI Location Settings - Levels where anomaly evasion is disabled
-    Part of MAI (Mutant/Anomaly Interaction) by AllC0r3
+    NDA Location Settings - Levels where anomaly evasion is disabled
+    Part of NDA (NPCs Die in Anomalies) by AllC0r3
     
     Anomaly evasion is disabled on these levels because they are:
     - Underground labs (limited space, anomalies are part of level design)
     - Very small locations (anomaly evasion not practical)
 --]]
 
-mai_always_ignore_levels = {
+nda_always_ignore_levels = {
     -- Underground locations
     ["jupiter_underground"]     = true,     -- Jupiter Underground
     ["l03u_agr_underground"]    = true,     -- Agroprom Underground

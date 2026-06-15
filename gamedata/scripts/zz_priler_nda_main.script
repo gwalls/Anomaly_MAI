@@ -1,11 +1,11 @@
--- MAI (Mutant/Anomaly Interaction) by Priler
+-- NDA (NPCs Die in Anomalies) by Priler
 -- original idea/mod by AllC0r3
 
--- MAI tries to make this work by introducing a complex pathfinding restrictions,
+-- NDA tries to make this work by introducing a complex pathfinding restrictions,
 -- damage formula system, NPCs protection (armor based as well), rolls (hello DnD),
 -- and much, much more.
 --
--- WIP
+-- BETA WIP
 
 
 -- [ Local Aliases ]--
@@ -93,7 +93,7 @@ local function safe_call(func, ...)
 
     if not pcall_failures_seen[key] then
         pcall_failures_seen[key] = 1
-        printf("[MAI][PCALL_FAIL] %s - %s (further occurrences silenced)", where, tostring(result))
+        printf("[NDA][PCALL_FAIL] %s - %s (further occurrences silenced)", where, tostring(result))
     else
         pcall_failures_seen[key] = pcall_failures_seen[key] + 1
     end
@@ -128,8 +128,8 @@ end
 -- [ MCM Integration ]--
 
 local function get_mcm_setting(key, default)
-    if zz_allc0r3_mai_mcm then
-        local getter = zz_allc0r3_mai_mcm["get_config"]
+    if zz_priler_nda_mcm then
+        local getter = zz_priler_nda_mcm["get_config"]
         if getter then
             local val = getter(key)
             if val ~= nil then return val end
@@ -156,19 +156,19 @@ end
 local function dbg_log(category, format, ...)
     if not is_debug_enabled() then return end
     local msg = sformat(format, ...)
-    printf("[%s][MAI][%s] %s", time_global(), category, msg)
+    printf("[%s][NDA][%s] %s", time_global(), category, msg)
 end
 
 local function dbg_verbose(category, format, ...)
     if not is_verbose_debug() then return end
     local msg = sformat(format, ...)
-    printf("[%s][MAI][%s] %s", time_global(), category, msg)
+    printf("[%s][NDA][%s] %s", time_global(), category, msg)
 end
 
 -- Always-on diagnostic logging. The engine's printf only substitutes %s, so the
 -- message is built with sformat first (which supports %d/%.1f) then passed as %s.
 local function diag_log(category, format, ...)
-    printf("[%s][MAI][%s] %s", time_global(), category, sformat(format, ...))
+    printf("[%s][NDA][%s] %s", time_global(), category, sformat(format, ...))
 end
 
 
@@ -225,14 +225,14 @@ local function init_ignored_anomalies()
     ignored_anomalies_hash = {}
     ignored_anomalies_patterns = {}
 
-    if not zz_allc0r3_mai_anomalies_settings then return end
+    if not zz_priler_nda_anomalies_settings then return end
 
-    ingest_ignore_list(zz_allc0r3_mai_anomalies_settings.mai_always_ignore_anom)
+    ingest_ignore_list(zz_priler_nda_anomalies_settings.nda_always_ignore_anom)
 
-    -- Per-location hardcoded fields are optional: with the toggle off, MAI manages them
+    -- Per-location hardcoded fields are optional: with the toggle off, NDA manages them
     -- (avoid / suppress damage / loot guard sees corpses there) instead of skipping them.
     if get_mcm_setting("legacy_anomaly_ignores", true) then
-        ingest_ignore_list(zz_allc0r3_mai_anomalies_settings.mai_legacy_ignore_anom)
+        ingest_ignore_list(zz_priler_nda_anomalies_settings.nda_legacy_ignore_anom)
     end
 end
 
@@ -350,14 +350,14 @@ local function ensure_cache()
         
         -- refresh debug markers if needed
         if cached_show_debug_anomalies then
-            CreateTimeEvent("mai_debug_markers", "refresh", 0.5, function()
+            CreateTimeEvent("nda_debug_markers", "refresh", 0.5, function()
                 if cached_show_debug_anomalies and cache_valid then
                     local count = 0
                     for _, anom in ipairs(anomaly_cache) do
                         if level.map_has_object_spot(anom.id, "anomaly_disabled") ~= 0 then
                             level.map_remove_object_spot(anom.id, "anomaly_disabled")
                         end
-                        local marker_text = sformat("MAI: %s\\n%s", anom.name, anom.section)
+                        local marker_text = sformat("NDA: %s\\n%s", anom.name, anom.section)
                         level.map_add_object_spot_ser(anom.id, "anomaly_disabled", marker_text)
                         count = count + 1
                     end
@@ -378,11 +378,11 @@ local function is_ignore_npc(npc)
     local section = npc:section()
     local profile = npc:profile_name()
     
-    if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[section] then
+    if zz_priler_nda_npc_settings.demonized_ignore_npc[section] then
         dbg_verbose("IGNORE", "NPC [%s] ignored by section [%s]", npc:name(), section)
         return true
     end
-    if zz_allc0r3_mai_npc_settings.demonized_ignore_npc[profile] then
+    if zz_priler_nda_npc_settings.demonized_ignore_npc[profile] then
         dbg_verbose("IGNORE", "NPC [%s] ignored by profile [%s]", npc:name(), profile)
         return true
     end
@@ -536,15 +536,15 @@ local function should_enable_anomaly_damage(npc)
         return false, "mcm_zombied_no_damage"
     end
 
-    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith"
+    if zz_priler_nda_npc_settings and community ~= "greh" and community ~= "monolith"
             and community ~= "zombied" then
-        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
-           zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+        if zz_priler_nda_npc_settings.nda_always_full_ignore_community and
+           zz_priler_nda_npc_settings.nda_always_full_ignore_community[community] then
             return false, "full_ignore_community"
         end
 
-        if zz_allc0r3_mai_npc_settings.mai_no_damage_community and
-           zz_allc0r3_mai_npc_settings.mai_no_damage_community[community] then
+        if zz_priler_nda_npc_settings.nda_no_damage_community and
+           zz_priler_nda_npc_settings.nda_no_damage_community[community] then
             return false, "no_damage_community"
         end
     end
@@ -644,15 +644,15 @@ local function should_add_restrictions(npc)
         return false
     end
 
-    if zz_allc0r3_mai_npc_settings and community ~= "greh" and community ~= "monolith"
+    if zz_priler_nda_npc_settings and community ~= "greh" and community ~= "monolith"
             and community ~= "zombied" then
-        if zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community and
-           zz_allc0r3_mai_npc_settings.mai_always_full_ignore_community[community] then
+        if zz_priler_nda_npc_settings.nda_always_full_ignore_community and
+           zz_priler_nda_npc_settings.nda_always_full_ignore_community[community] then
             return false
         end
 
-        if zz_allc0r3_mai_npc_settings.mai_no_evade_community and
-           zz_allc0r3_mai_npc_settings.mai_no_evade_community[community] then
+        if zz_priler_nda_npc_settings.nda_no_evade_community and
+           zz_priler_nda_npc_settings.nda_no_evade_community[community] then
             return false
         end
     end
@@ -837,7 +837,7 @@ end
 -- tick. Lets the probe elect a cluster tester without per-NPC engine spatial queries.
 local tick_npc_positions = {}
 
--- Per-tick anomaly name->pos map, built ONCE at the top of mai_periodic_tick from
+-- Per-tick anomaly name->pos map, built ONCE at the top of nda_periodic_tick from
 -- anomaly_cache and reused by every NPC's memory bookkeeping below. Avoids rebuilding an
 -- O(#anomaly_cache) table per NPC per tick (was done twice per NPC in update_npc_restrictions).
 local tick_cache_by_name = {}
@@ -1366,7 +1366,7 @@ local function report_anomaly_death(npc, anomaly_info)
         loc_str = sformat("%s [%.0f, %.0f, %.0f]", loc_level, p.x, p.y, p.z)
     end
 
-    printf("[MAI][DEATH] %s (%s %s) killed by %s (%s) at %s while %s",
+    printf("[NDA][DEATH] %s (%s %s) killed by %s (%s) at %s while %s",
         victim_name, victim_rank, faction_name,
         anomaly_info.name, anomaly_info.section, loc_str, victim_state)
 
@@ -1374,7 +1374,7 @@ local function report_anomaly_death(npc, anomaly_info)
         local news_text = sformat("%s (%s %s) killed by %s at %s while %s",
             victim_name, victim_rank, faction_name,
             anomaly_info.section, loc_str, victim_state)
-        db.actor:give_game_news("MAI: Anomaly Kill", news_text, "ui_inGame2_PD_Dengi", 0, 8000, 0)
+        db.actor:give_game_news("NDA: Anomaly Kill", news_text, "ui_inGame2_PD_Dengi", 0, 8000, 0)
     end
 end
 
@@ -1388,7 +1388,7 @@ local function mark_anomaly_death_spot(npc, anomaly_info)
     if not is_valid_object(npc) then return end
 
     local id = npc:id()
-    local hint = sformat("MAI: %s killed by %s",
+    local hint = sformat("NDA: %s killed by %s",
         npc:name() or "stalker", (anomaly_info and anomaly_info.section) or "anomaly")
 
     if level.map_has_object_spot(id, DEATH_SPOT_TYPE) ~= 0 then
@@ -1408,8 +1408,8 @@ local function mark_anomaly_death_spot(npc, anomaly_info)
 
     -- Auto-remove after the duration. Unique action id per corpse; Remove first so a
     -- re-mark of the same id can't stack two timers.
-    RemoveTimeEvent("mai_death_spot", "spot_" .. id)
-    CreateTimeEvent("mai_death_spot", "spot_" .. id, DEATH_SPOT_DURATION_SEC, function()
+    RemoveTimeEvent("nda_death_spot", "spot_" .. id)
+    CreateTimeEvent("nda_death_spot", "spot_" .. id, DEATH_SPOT_DURATION_SEC, function()
         if level.map_has_object_spot(id, DEATH_SPOT_TYPE) ~= 0 then
             level.map_remove_object_spot(id, DEATH_SPOT_TYPE)
             dbg_log("DEATH", "Map spot expired for corpse %s", tostring(id))
@@ -1457,8 +1457,8 @@ local function is_ignore_level()
     local current_level = level.name()
     if not current_level then return true end
     
-    if not zz_allc0r3_mai_location_settings then return false end
-    local ignore_levels = zz_allc0r3_mai_location_settings.mai_always_ignore_levels
+    if not zz_priler_nda_location_settings then return false end
+    local ignore_levels = zz_priler_nda_location_settings.nda_always_ignore_levels
     if not ignore_levels then return false end
     
     return ignore_levels[current_level] == true
@@ -1467,7 +1467,7 @@ end
 
 -- [ Main Update Loop ]--
 
-local function mai_periodic_tick()
+local function nda_periodic_tick()
     if not is_mod_enabled() then return end
     if surge_started() then return end
     if not db.actor then return end
@@ -1566,12 +1566,12 @@ local function mai_periodic_tick()
 end
 
 local function schedule_next_tick()
-    CreateTimeEvent("mai_periodic", "mai_tick", UPDATE_INTERVAL_SEC, function()
-        local ok, err = pcall(mai_periodic_tick)
+    CreateTimeEvent("nda_periodic", "nda_tick", UPDATE_INTERVAL_SEC, function()
+        local ok, err = pcall(nda_periodic_tick)
         if not ok then
-            printf("[MAI][TICK_FAIL] %s", tostring(err))
+            printf("[NDA][TICK_FAIL] %s", tostring(err))
         end
-        ResetTimeEvent("mai_periodic", "mai_tick", UPDATE_INTERVAL_SEC)
+        ResetTimeEvent("nda_periodic", "nda_tick", UPDATE_INTERVAL_SEC)
         return false
     end)
 end
@@ -1590,7 +1590,7 @@ function show_debug_anomaly_markers()
         if level.map_has_object_spot(id, "anomaly_disabled") ~= 0 then
             level.map_remove_object_spot(id, "anomaly_disabled")
         end
-        local marker_text = sformat("MAI: %s\\n%s", anom.name, anom.section)
+        local marker_text = sformat("NDA: %s\\n%s", anom.name, anom.section)
         level.map_add_object_spot_ser(id, "anomaly_disabled", marker_text)
         count = count + 1
     end
@@ -1686,14 +1686,14 @@ local function schedule_cache_rebuild(reason)
     local delay = get_mcm_setting("cache_rebuild_delay", 2.5)
     dbg_verbose("EVENT", "%s, scheduling rebuild in %.1fs", reason, delay)
     
-    RemoveTimeEvent("mai_cache_rebuild", "mai_cache_rebuild")
+    RemoveTimeEvent("nda_cache_rebuild", "nda_cache_rebuild")
     
     if delay <= 0 then
         invalidate_cache()
         return
     end
     
-    CreateTimeEvent("mai_cache_rebuild", "mai_cache_rebuild", delay, function()
+    CreateTimeEvent("nda_cache_rebuild", "nda_cache_rebuild", delay, function()
         invalidate_cache()
         return true
     end)
@@ -1728,7 +1728,7 @@ local function on_game_load()
 
     -- Bootstrap (or re-arm) the periodic tick. RemoveTimeEvent first so a stale chain from
     -- a prior session/level doesn't double-fire alongside the new one.
-    RemoveTimeEvent("mai_periodic", "mai_tick")
+    RemoveTimeEvent("nda_periodic", "nda_tick")
     schedule_next_tick()
 end
 
@@ -1743,7 +1743,7 @@ local function on_level_changed()
 
     -- The actor_on_first_update hook will re-arm the timer on the new level via on_game_load.
     -- Drop the existing chain so it doesn't fire against a half-loaded level.
-    RemoveTimeEvent("mai_periodic", "mai_tick")
+    RemoveTimeEvent("nda_periodic", "nda_tick")
 end
 
 local function on_npc_net_destroy(npc)
@@ -1812,6 +1812,6 @@ function on_game_start()
     RegisterScriptCallback("on_level_changing", on_level_changed)
     
     local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    dbg_log("INIT", "MAI v2.6 loaded - enabled=%s, debug=%s, Arrival: %s", 
+    dbg_log("INIT", "NDA v3.0 loaded - enabled=%s, debug=%s, Arrival: %s", 
         tostring(cached_mod_enabled), tostring(cached_debug_mode), arrival_status)
 end

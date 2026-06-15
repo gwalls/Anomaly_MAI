@@ -1,11 +1,11 @@
 -- Part of PR #1 merge (AI slop coded but works so fuck it)
 --
--- MAI Corpse-Loot Guard
+-- NDA Corpse-Loot Guard
 -- Blocks NPC loot AI from selecting corpses inside anomaly fields.
 --
 -- Why: when one NPC dies in an anomaly, others queue up to loot the body,
 -- die in the same anomaly, and the chain continues. Corpse-loot AI sets the
--- looter's destination AS the corpse position, so MAI's restriction zones
+-- looter's destination AS the corpse position, so NDA's restriction zones
 -- (which only block paths THROUGH a zone) can't intervene.
 --
 -- How: monkey-patch xr_corpse_detection.evaluator_corpse:find_valid_target.
@@ -23,43 +23,43 @@ local installed = false
 -- xr_corpse_detection.set_valuable_loot(id, false) alone is insufficient because
 -- other mods reset HasValuableLoot[id] = true (e.g. More_Aggressive_NPC_Looting's
 -- on_item_take callback fires on corpse death-drops, on_death_callback re-runs,
--- on_pstor_load_all, etc.). Without an MAI-side latch the NPC re-targets the same
+-- on_pstor_load_all, etc.). Without an NDA-side latch the NPC re-targets the same
 -- in-anomaly corpse every 2s, walks toward it, hits the guard, stops, re-plans,
 -- repeats forever -- the "stutter at perimeter" symptom. Anomaly positions don't
 -- move; once a corpse is in a damage zone it stays in one, so an unbounded latch
 -- is correct.
-local mai_corpse_blacklist = {}
+local nda_corpse_blacklist = {}
 
 
 local function get_mcm_enabled()
-    if zz_allc0r3_mai_mcm and zz_allc0r3_mai_mcm.get_config then
-        local val = zz_allc0r3_mai_mcm.get_config("block_corpse_loot_in_anomalies")
+    if zz_priler_nda_mcm and zz_priler_nda_mcm.get_config then
+        local val = zz_priler_nda_mcm.get_config("block_corpse_loot_in_anomalies")
         if val ~= nil then return val end
     end
     return true
 end
 
 local function is_position_in_anomaly(pos)
-    if zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_position_in_anomaly then
-        return zz_allc0r3_mai_main.is_position_in_anomaly(pos, LOOT_BLOCK_RADIUS)
+    if zz_priler_nda_main and zz_priler_nda_main.is_position_in_anomaly then
+        return zz_priler_nda_main.is_position_in_anomaly(pos, LOOT_BLOCK_RADIUS)
     end
     return false
 end
 
 local function debug_enabled()
-    return zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_debug_enabled
-        and zz_allc0r3_mai_main.is_debug_enabled() or false
+    return zz_priler_nda_main and zz_priler_nda_main.is_debug_enabled
+        and zz_priler_nda_main.is_debug_enabled() or false
 end
 
 local function is_npc_in_push_through(id)
-    if zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_npc_in_push_through then
-        return zz_allc0r3_mai_main.is_npc_in_push_through(id)
+    if zz_priler_nda_main and zz_priler_nda_main.is_npc_in_push_through then
+        return zz_priler_nda_main.is_npc_in_push_through(id)
     end
     return false
 end
 
 local function log(format, ...)
-    printf("[%s][MAI][LOOT_GUARD] %s", time_global(), string.format(format, ...))
+    printf("[%s][NDA][LOOT_GUARD] %s", time_global(), string.format(format, ...))
 end
 
 
@@ -111,16 +111,16 @@ local function install()
 
         local target_pos = self.a.vertex_position or self.a.nearest_corpse_position
         local in_anomaly = target_pos and is_position_in_anomaly(target_pos)
-        local blacklisted = picked_id and mai_corpse_blacklist[picked_id]
+        local blacklisted = picked_id and nda_corpse_blacklist[picked_id]
 
         if not (in_anomaly or blacklisted) then return result end
 
         -- Mark the corpse unlootable for every NPC. Anomaly positions don't move,
         -- so the block persists for the corpse's lifetime. We also stamp our own
-        -- mai_corpse_blacklist so subsequent calls block even if another mod resets
+        -- nda_corpse_blacklist so subsequent calls block even if another mod resets
         -- HasValuableLoot[id] = true between intercepts.
         if picked_id then
-            mai_corpse_blacklist[picked_id] = true
+            nda_corpse_blacklist[picked_id] = true
             if xr_corpse_detection.set_valuable_loot then
                 xr_corpse_detection.set_valuable_loot(picked_id, false)
             end
@@ -150,7 +150,7 @@ local function install()
         -- loot-pose timer in action_search_corpse:execute), the preventive clear above
         -- isn't enough -- the action stays "running" and re-asserts the standing pose
         -- on its next execute. Drop the timer and force-break the state so GOAP
-        -- re-plans and MAI's push_through rush_to_target can actually move the NPC.
+        -- re-plans and NDA's push_through rush_to_target can actually move the NPC.
         if self.object and state_mgr and state_mgr.get_state then
             local current = state_mgr.get_state(self.object)
             if current == "search_corpse" or current == "field_dress" then

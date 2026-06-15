@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+    <moduleName>NDA (NPCs Die in Anomalies)</moduleName>
+
+    <installSteps order="Explicit">
+        <installStep name="NDA - NPCs Die in Anomalies">
+            <optionalFileGroups order="Explicit">
+                <group name="Core" type="SelectExactlyOne">
+                    <plugins order="Explicit">
+                        <plugin name="Full install (recommended)">
+                            <description>Installs the complete mod: anomaly detection and avoidance, anomaly damage, corpse-loot and heal guards, MCM options. For Anomaly 1.5.3 and GAMMA.</description>
+                            <files>
+                                <folder source="gamedata" destination="gamedata" priority="0" />
+                            </files>
+                            <typeDescriptor>
+                                <type name="Required" />
+                            </typeDescriptor>
+                        </plugin>
+                    </plugins>
+                </group>
+            </optionalFileGroups>
+        </installStep>
+    </installSteps>
+</config>

@@ -1,6 +1,6 @@
 -- Part of PR #1 merge (AI slop coded but works so fuck it)
 --
--- MAI Heal-in-Anomaly Guard
+-- NDA Heal-in-Anomaly Guard
 -- Blocks NPC heal actions from running while the NPC is inside an anomaly's damage
 -- radius. Covers two sources:
 --   1. axr_otheal scheme (NPC Limping and Healing mod) -- medic heals a teammate.
@@ -10,7 +10,7 @@
 --
 -- Why: anomaly-safety in both schemes relies on the GOAP world_property
 -- stalker_ids.property_anomaly, which is only TRUE when the engine actively sensed
--- an anomaly via FEEL (set_enable_anomalies_pathfinding). MAI turns FEEL OFF for
+-- an anomaly via FEEL (set_enable_anomalies_pathfinding). NDA turns FEEL OFF for
 -- push_through NPCs and non-elected feelers, so the property stays FALSE even when
 -- the NPC is standing in a thermal. The heal action passes its precondition, locks
 -- movement, and the NPC dies in the zone.
@@ -39,22 +39,22 @@ local function safe_call(func, ...)
 end
 
 local function debug_enabled()
-    return zz_allc0r3_mai_main and zz_allc0r3_mai_main.is_debug_enabled
-        and zz_allc0r3_mai_main.is_debug_enabled() or false
+    return zz_priler_nda_main and zz_priler_nda_main.is_debug_enabled
+        and zz_priler_nda_main.is_debug_enabled() or false
 end
 
 local function log(format, ...)
-    printf("[%s][MAI][HEAL_GUARD] %s", time_global(), string.format(format, ...))
+    printf("[%s][NDA][HEAL_GUARD] %s", time_global(), string.format(format, ...))
 end
 
 local function npc_in_anomaly(npc)
     if not npc then return false end
-    if not zz_allc0r3_mai_main or not zz_allc0r3_mai_main.is_position_in_anomaly then
+    if not zz_priler_nda_main or not zz_priler_nda_main.is_position_in_anomaly then
         return false
     end
     local pos = safe_call(npc.position, npc)
     if not pos then return false end
-    return zz_allc0r3_mai_main.is_position_in_anomaly(pos, HEAL_BLOCK_RADIUS)
+    return zz_priler_nda_main.is_position_in_anomaly(pos, HEAL_BLOCK_RADIUS)
 end
 
 
