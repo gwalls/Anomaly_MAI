@@ -97,7 +97,14 @@
     <string id="ui_mcm_nda_cache_rebuild_delay_desc">
         <text>Delay after surge/psy-storm before rebuilding anomaly cache. Needed for Arrival mod compatibility. Default: 2.5s</text>
     </string>
-    
+
+    <string id="ui_mcm_nda_anomaly_state_refresh">
+        <text>Anomaly State Refresh (s)</text>
+    </string>
+    <string id="ui_mcm_nda_anomaly_state_refresh_desc">
+        <text>How often the anomaly cache re-checks which zones are on or off. Dynamic anomalies (Arrival, base shuffle) toggle on their own timers; a lower value lets NPCs cross a tunnel sooner once its anomaly turns off, at a small cost. 0 disables the timed refresh. Default: 2s</text>
+    </string>
+
     <string id="ui_mcm_nda_bubble_enabled">
         <text>Interaction Bubble</text>
     </string>
@@ -454,6 +461,13 @@
     </string>
     <string id="ui_mcm_nda_engine_feel_max_density_desc">
         <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 3</text>
+    </string>
+
+    <string id="ui_mcm_nda_clear_avoid_restrictors">
+        <text>Clear Engine Avoid-Walls</text>
+    </string>
+    <string id="ui_mcm_nda_clear_avoid_restrictors_desc">
+        <text>Some base-game anomaly fields are spawned as global "avoid" zones (restrictor_type 2) that the engine forces EVERY NPC to route around, regardless of damage settings. In single-corridor spots (e.g. the Cordon railway tunnel, lined with witches-galantine zones) there is no path around, so NPCs get permanently stuck at the entrance even with no damage. This clears that engine wall so NDA's own avoidance + sprint-through manages the field instead. Does NOT change anomaly damage to the player. Default: ON</text>
     </string>
 
     <!-- ### Community Exclusions ### -->

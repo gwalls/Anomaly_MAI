@@ -31,6 +31,7 @@ local mceil = math.ceil
 local anomaly_cache = {}
 local cache_valid = false
 local cache_level = nil
+local cache_built_at = 0   -- time_global() of last rebuild; drives the staleness refresh
 
 local UPDATE_INTERVAL_SEC = 2.0
 
@@ -45,7 +46,7 @@ local debug_anomalies_shown = false
 -- Created on first access and deleted during net_destroy.
 -- Fields:
 --   last_update, last_anomaly, known_anomalies, restrictions,
---   restrict_start, restrict_anchor_pos, push_through, pre_push_run,
+--   restrict_start, restrict_anchor_pos, avoid_since, push_through, pre_push_run,
 --   feel_on, probed, probe_until, took_damage.
 local npc_state = {}
 
@@ -71,6 +72,9 @@ local MIN_RESTRICT_DISTANCE = 4
 -- 1. Measured by straight line displacement, not total path length.
 -- 2. Prevents infinite circling by ensuring lack of real movement triggers the stuck timer.
 local STUCK_PROGRESS_DIST = 8
+
+-- Hard ceiling on continuous avoidance, as a multiple of npc_stuck_timeout
+local STUCK_HARD_MULT = 2
 
 -- Radius in meters for checking local anomaly density.
 -- Determines the routing behavior based on the MCM max density setting:
@@ -172,31 +176,51 @@ local function diag_log(category, format, ...)
 end
 
 
--- [ Arrival Compatibility ]--
+-- [ Anomaly Zone State ]--
 
-local arrival_checked = false
-local arrival_loaded = false
+-- Engine truth for whether a zone is currently switched on. Arrival (drx_da) and
+-- the base Dynamic Anomalies feature both turn zones off through the same engine
+-- path (disable_anomaly then ZoneDisable), so this one getter covers both with no
+-- mod-specific code
+local engine_zone_state_supported = nil
 
-local function is_arrival_loaded()
-    if not arrival_checked then
-        arrival_loaded = arrival_zone_disable ~= nil and 
-                        arrival_zone_disable.zd_spawn and
-                        arrival_zone_disable.zd_spawn.zones_to_disable
-        arrival_checked = true
+local function is_anomaly_zone_enabled(anom_obj)
+    local enabled = safe_call(anom_obj.is_enabled_anomaly, anom_obj)
+    if engine_zone_state_supported == nil then
+        engine_zone_state_supported = (enabled ~= nil)
+        dbg_log("INIT", "engine zone-state getter is_enabled_anomaly: %s",
+            engine_zone_state_supported and "supported" or "unsupported, assuming all zones active")
     end
-    return arrival_loaded
+    if enabled == nil then return true end
+    return enabled
 end
 
-local function is_arrival_anomaly_active(anom_id, level_name)
-    if not is_arrival_loaded() then return true end
-    
-    local zones_to_disable = arrival_zone_disable.zd_spawn.zones_to_disable
-    if not zones_to_disable then return true end
-    
-    local level_zones = zones_to_disable[level_name]
-    if not level_zones then return true end
-    
-    return not level_zones[anom_id]
+-- OK SO.
+-- Base game anomaly fields can spawn with restrictor_type = 2 (eDefaultRestrictorTypeIn).
+-- The engine registers every such zone into its GLOBAL m_default_in_restrictions list, so
+-- EVERY stalker auto-avoids it via the space_restriction_manager
+-- kind of a WALL that stalkers should avoid (for whatever reason)
+-- it ignores ai_die_in_anomaly (0) + NDA's push-through cannot clear (push-through only drops NDA's own add_restrictions + feel flag)
+--
+-- The cordon railway tunnel is lined floor-to-floor with such witches_galantine zones, so
+-- NPCs park at the mouth and never cross.
+-- To "fix" this, we force em to type 3 (eRestrictorTypeNone) so NDA
+-- alone governs avoidance/damage. force_set_restrictor_type UNREGISTERS the old type first
+-- (script_game_object3.cpp:2051); plain set_restrictor_type does not, so it cannot remove an
+-- existing default registration. Player anomaly damage is unaffected (separate feel/Affect
+-- path)
+local DEFAULT_AVOID_RESTR = 2  -- eDefaultRestrictorTypeIn (global auto-avoid)
+local NONE_RESTR          = 3  -- eRestrictorTypeNone (unregistered, no auto-avoid)
+local function neutralize_default_avoid(anom_obj)
+    if type(anom_obj.get_restrictor_type) ~= "function"
+       or type(anom_obj.force_set_restrictor_type) ~= "function" then
+        return
+    end
+    if safe_call(anom_obj.get_restrictor_type, anom_obj) == DEFAULT_AVOID_RESTR then
+        safe_call(anom_obj.force_set_restrictor_type, anom_obj, NONE_RESTR)
+        dbg_log("RESTR", "cleared default-avoid (type 2->3) on %s",
+            tostring(safe_call(anom_obj.name, anom_obj)))
+    end
 end
 
 
@@ -268,14 +292,15 @@ local function rebuild_anomaly_cache()
     
     local count = 0
     local skipped = 0
-    local skip_reasons = { always_skip = 0, arrival_inactive = 0, dyn_disabled = 0, no_pos = 0, no_name = 0 }
-    local arrival_loaded_now = is_arrival_loaded()
-    local dyn_anomalies = bind_anomaly_field.dyn_anomalies
-    local dyn_anomalies_level = dyn_anomalies and dyn_anomalies[lvl_name]
+    local skip_reasons = { always_skip = 0, zone_disabled = 0, no_pos = 0, no_name = 0 }
+    local clear_avoid = get_mcm_setting("clear_avoid_restrictors", true)
 
     for _, v in pairs(fields) do
         local anom_obj = v and v.object
         if anom_obj then
+            -- Declaw the engine global-avoid wall on EVERY online field (even ones NDA
+            -- later skips), so NDA's own avoidance/push-through is the sole authority
+            if clear_avoid then neutralize_default_avoid(anom_obj) end
             local anom_id = safe_call(anom_obj.id, anom_obj)
             if anom_id and anom_id ~= 65535 then
                 local se_obj = alife_object(anom_id)
@@ -289,20 +314,8 @@ local function rebuild_anomaly_cache()
                     elseif is_always_skip_anomaly(anom_name) then
                         skip_reason = "always_skip"
                     else
-                        local is_active = true
-
-                        if arrival_loaded_now then
-                            is_active = is_arrival_anomaly_active(anom_id, lvl_name)
-                            if not is_active then skip_reason = "arrival_inactive" end
-                        end
-
-                        if is_active and dyn_anomalies_level then
-                            local dyn_state = dyn_anomalies_level[anom_id]
-                            if dyn_state == false then
-                                is_active = false
-                                skip_reason = "dyn_disabled"
-                            end
-                        end
+                        local is_active = is_anomaly_zone_enabled(anom_obj)
+                        if not is_active then skip_reason = "zone_disabled" end
 
                         if is_active then
                             local pos = safe_call(anom_obj.position, anom_obj)
@@ -333,9 +346,10 @@ local function rebuild_anomaly_cache()
     end
 
     cache_valid = true
-    dbg_log("CACHE", "Rebuilt: %d anomalies on %s (skipped %d: arrival=%d dyn=%d always=%d nopos=%d noname=%d)",
+    cache_built_at = time_global()
+    dbg_log("CACHE", "Rebuilt: %d anomalies on %s (skipped %d: zone_disabled=%d always=%d nopos=%d noname=%d)",
         count, lvl_name, skipped,
-        skip_reasons.arrival_inactive, skip_reasons.dyn_disabled,
+        skip_reasons.zone_disabled,
         skip_reasons.always_skip, skip_reasons.no_pos, skip_reasons.no_name)
 end
 
@@ -345,7 +359,13 @@ end
 
 local function ensure_cache()
     local current_level = level.name()
-    if not cache_valid or cache_level ~= current_level then
+    -- Anomalies have no enable/disable callback, so a cache built when a zone was on
+    -- would treat it as active forever. Dynamic anomalies (Arrival, base shuffle) toggle
+    -- on their own timers; refresh on a short interval so a temp-disabled zone drops out
+    -- and NPCs can cross while it is off. 0 disables the timed refresh
+    local refresh_ms = get_mcm_setting("anomaly_state_refresh", 2) * 1000
+    local stale = refresh_ms > 0 and (time_global() - cache_built_at) >= refresh_ms
+    if not cache_valid or cache_level ~= current_level or stale then
         rebuild_anomaly_cache()
         
         -- refresh debug markers if needed
@@ -879,12 +899,72 @@ local function commit_push_through(npc, st, reason)
     st.restrictions        = nil
     st.restrict_start      = nil
     st.restrict_anchor_pos = nil
+    st.avoid_since         = nil
     st.probed              = nil
     st.probe_until         = nil
     set_npc_feel(npc, st, false)
     clear_npc_restrictions(npc)
     dbg_log("PUSH_THROUGH", "[%s] sprinting through (%s)", npc:name() or "?", reason)
     safe_call(npc.set_movement_type, npc, move.run)
+end
+
+-- Stall test shared by both avoidance branches.
+-- Soft trigger: no STUCK_PROGRESS_DIST of net displacement within stuck_ms (NPC pinned in place)
+-- Hard trigger: in unbroken avoidance for STUCK_HARD_MULT * stuck_ms regardless of movement (NPC pacing a chokepoint
+-- keeps re-anchoring the soft timer, so this is the guaranteed escape)
+local function avoidance_stalled(st, npc_pos, now, stuck_ms)
+    if not st.restrict_anchor_pos or not st.restrict_start then
+        st.restrict_anchor_pos = npc_pos
+        st.restrict_start      = now
+    elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
+        st.restrict_anchor_pos = npc_pos
+        st.restrict_start      = now
+    end
+
+    if not st.avoid_since then st.avoid_since = now end
+
+    if (now - st.restrict_start) > stuck_ms then return true end
+    if (now - st.avoid_since) > stuck_ms * STUCK_HARD_MULT then return true end
+    return false
+end
+
+-- Return an NPC to engine-default anomaly behavior: no feel-avoidance, no forced damage,
+-- restrictions cleared, walk restored
+local function reset_npc_anomaly_state(npc)
+    if not is_valid_object(npc) then return end
+    safe_call(npc.set_enable_anomalies_damage, npc, false)
+    local st = npc_state[safe_call(npc.id, npc)]
+    if st then
+        if st.restrictions then clear_npc_restrictions(npc) end
+        set_npc_feel(npc, st, false)
+        if st.push_through and not st.pre_push_run then
+            safe_call(npc.set_movement_type, npc, move.walk)
+        end
+        st.restrict_start      = nil
+        st.restrict_anchor_pos = nil
+        st.avoid_since         = nil
+        st.push_through        = nil
+        st.pre_push_run        = nil
+        st.probed              = nil
+        st.probe_until         = nil
+    else
+        -- No tracked state (state wiped, or NPC flagged earlier this session): force the
+        -- engine flag off directly, since set_npc_feel needs st to dedupe
+        safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+    end
+end
+
+-- Capability probe for the engine npc:inside_anomaly() export (modded-exes build)
+local engine_inside_anomaly_supported = nil
+
+local function npc_inside_anomaly(npc)
+    if engine_inside_anomaly_supported == nil then
+        engine_inside_anomaly_supported = (type(npc.inside_anomaly) == "function")
+        diag_log("INIT", "engine npc:inside_anomaly() %s",
+            engine_inside_anomaly_supported and "available" or "absent, using distance fallback")
+    end
+    if not engine_inside_anomaly_supported then return nil end
+    return safe_call(npc.inside_anomaly, npc) == true
 end
 
 local function update_npc_restrictions(npc, detection_radius)
@@ -915,6 +995,7 @@ local function update_npc_restrictions(npc, detection_radius)
         end
         st.restrict_start      = nil
         st.restrict_anchor_pos = nil
+        st.avoid_since         = nil
         st.push_through        = nil
         st.pre_push_run        = nil
         st.probed              = nil
@@ -984,12 +1065,29 @@ local function update_npc_restrictions(npc, detection_radius)
         rank = safe_call(ranks.get_obj_rank_name, npc) or "unknown"
     end
 
-    for _, anom in ipairs(nearby) do
+    -- Engine truth for "physically touching a zone" when this build exports it; nil
+    -- otherwise, in which case the per-anomaly distance test below stands alone
+    local engine_inside = npc_inside_anomaly(npc)
+
+    for idx, anom in ipairs(nearby) do
         local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
 
         -- An anomaly the NPC is already inside can't be routed around, so don't treat
         -- it as a fresh detection -- push-through handles getting it out.
         local too_close = anom.pos and npc_pos:distance_to(anom.pos) < MIN_RESTRICT_DISTANCE
+
+        -- Large zones have a center far from their rim, so the flat distance test can
+        -- miss a zone the NPC is standing in. nearby is sorted closest-first, so when the
+        -- engine confirms contact the first entry is that zone: routing around it is
+        -- useless, skip it
+        if engine_inside == true and idx == 1 then
+            if not too_close then
+                local d = anom.pos and npc_pos:distance_to(anom.pos) or -1
+                dbg_log("INSIDE", "[%s] engine inside_anomaly() caught [%s] at %.1fm (distance test missed, MIN=%d)",
+                    npc:name() or "?", anom.name, d, MIN_RESTRICT_DISTANCE)
+            end
+            too_close = true
+        end
 
         if too_close then
             dbg_verbose("DETECT", "[%s] skipped [%s] (already inside zone)",
@@ -1080,19 +1178,11 @@ local function update_npc_restrictions(npc, detection_radius)
             end
             if local_density <= max_density then
                 -- Sparse: feel ON; drop our (possibly inert) restrictions and let the engine
-                -- route + throw bolts. Stuck backstop -- sprint out if it can't make net
-                -- progress (displacement-based, so circling still trips it).
+                -- route + throw bolts. Stuck backstop sprints out if it can't get past.
                 if st.restrictions then clear_npc_restrictions(npc) end
                 set_npc_feel(npc, st, true)
-                if not st.restrict_anchor_pos or not st.restrict_start then
-                    st.restrict_anchor_pos = npc_pos
-                    st.restrict_start      = current_time
-                elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
-                    st.restrict_anchor_pos = npc_pos
-                    st.restrict_start      = current_time
-                end
                 local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
-                if (current_time - st.restrict_start) > feel_stuck_ms then
+                if avoidance_stalled(st, npc_pos, current_time, feel_stuck_ms) then
                     commit_push_through(npc, st, "stuck (engine avoidance)")
                 end
                 return
@@ -1110,21 +1200,8 @@ local function update_npc_restrictions(npc, detection_radius)
             dbg_verbose("RESTRICT", "[%s] applied %d restrictions", npc:name() or "?", #detected)
         end
 
-        -- Tracks progress based on net displacement.
-        -- The stall timer resets only when the NPC moves STUCK_PROGRESS_DIST from its anchor.
-        -- Key results:
-        -- 1. NPCs making actual progress reset their timer.
-        -- 2. NPCs walking in circles will time out and commit to sprinting through.
-        if not st.restrict_anchor_pos or not st.restrict_start then
-            st.restrict_anchor_pos = npc_pos
-            st.restrict_start      = current_time
-        elseif npc_pos:distance_to(st.restrict_anchor_pos) >= STUCK_PROGRESS_DIST then
-            st.restrict_anchor_pos = npc_pos
-            st.restrict_start      = current_time
-        end
-
         local stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
-        if (current_time - st.restrict_start) > stuck_ms then
+        if avoidance_stalled(st, npc_pos, current_time, stuck_ms) then
             commit_push_through(npc, st, "stuck routing around")
         end
     else
@@ -1133,6 +1210,7 @@ local function update_npc_restrictions(npc, detection_radius)
         clear_npc_restrictions(npc)
         st.restrict_start      = nil
         st.restrict_anchor_pos = nil
+        st.avoid_since         = nil
     end
 end
 
@@ -1525,23 +1603,8 @@ local function nda_periodic_tick()
                 if within_radius then
                     configure_npc_anomaly_interaction(npc)
                 else
-                    safe_call(npc.set_enable_anomalies_damage, npc, false)
-                    -- db.OnlineStalkers is an index-keyed array of ids, so the loop key `id`
-                    -- is the array index, NOT the object id. npc_state is keyed by real id.
-                    local st = npc_state[npc:id()]
-                    if st then
-                        if st.restrictions then clear_npc_restrictions(npc) end
-                        set_npc_feel(npc, st, false)
-                        if st.push_through and not st.pre_push_run then
-                            safe_call(npc.set_movement_type, npc, move.walk)
-                        end
-                        st.restrict_start      = nil
-                        st.restrict_anchor_pos = nil
-                        st.push_through        = nil
-                        st.pre_push_run        = nil
-                        st.probed              = nil
-                        st.probe_until         = nil
-                    end
+                    -- Outside the interaction bubble: hand the NPC back to engine defaults
+                    reset_npc_anomaly_state(npc)
                 end
 
                 if within_radius or restrictions_ignore_radius then
@@ -1774,7 +1837,19 @@ end
 
 local function on_option_change()
     local old_show_debug = cached_show_debug_anomalies
+    local was_enabled = cached_mod_enabled
     update_mcm_cache()
+
+    -- Mod just turned off: the tick stops managing NPCs, but the persistent engine flags
+    -- NDA already set (anomaly pathfinding/damage) stay set, leaving touched NPCs routing
+    -- around anomalies (stuck in corridors) with NDA no longer in control
+    if was_enabled and not cached_mod_enabled then
+        for _, npc in pairs(db.OnlineStalkers or {}) do
+            if type(npc) == "number" then npc = level.object_by_id(npc) end
+            if is_valid_stalker(npc) then reset_npc_anomaly_state(npc) end
+        end
+        dbg_log("INIT", "NDA disabled - reset anomaly flags on online stalkers")
+    end
 
     -- The legacy-ignores toggle changes which anomalies are skipped; drop the memoized
     -- ignore lists and the anomaly cache so the next rebuild reflects the new setting.
@@ -1811,7 +1886,7 @@ function on_game_start()
     RegisterScriptCallback("actor_on_first_update", on_game_load)
     RegisterScriptCallback("on_level_changing", on_level_changed)
     
-    local arrival_status = is_arrival_loaded() and "detected" or "not detected"
-    dbg_log("INIT", "NDA v3.0 loaded - enabled=%s, debug=%s, Arrival: %s", 
-        tostring(cached_mod_enabled), tostring(cached_debug_mode), arrival_status)
+    -- Zone-disable handling is engine-based (is_enabled_anomaly)
+    dbg_log("INIT", "NDA v3.0 loaded - enabled=%s, debug=%s",
+        tostring(cached_mod_enabled), tostring(cached_debug_mode))
 end

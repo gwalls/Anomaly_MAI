@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <fomod>
-    <Name>NDA (NPCs Die in Anomalies)</Name>
+    <Name>N.D.A. (NPCs Die in Anomalies) - Priler</Name>
     <Author>Priler (based on the original idea/mod by AllC0r3)</Author>
     <Version MachineVersion="3.0">3.0</Version>
     <Description>NPCs and stalkers detect, avoid, and can die to anomalies. Adds anomaly-aware pathfinding restrictions, damage when caught inside a field, corpse-loot and heal guards, and full MCM tuning (detection, avoidance, damage, kill-rate caps per faction and rank). For Anomaly 1.5.3 and GAMMA.</Description>

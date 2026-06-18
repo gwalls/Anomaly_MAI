@@ -17,6 +17,7 @@ local defaults = {
     -- detection
     base_detection_radius = 30,
     cache_rebuild_delay = 2.5,
+    anomaly_state_refresh = 2,
     bubble_enabled = true,
     bubble_radius = 150,
     restrictions_ignore_radius = true,
@@ -27,6 +28,7 @@ local defaults = {
     npc_stuck_timeout = 20,
     engine_avoidance = true,
     engine_feel_max_density = 3,
+    clear_avoid_restrictors = true,
 
     -- damage
     enable_armor_damage_mult = true,
@@ -103,11 +105,11 @@ end
 assign_group("general",   { "mod_enabled" })
 assign_group("debug",     { "debug_mode", "verbose_debug", "show_debug_anomalies",
                             "cleanup_map_markers", "debug_death_news", "debug_death_map_spot" })
-assign_group("detection", { "base_detection_radius", "cache_rebuild_delay", "bubble_enabled",
-                            "bubble_radius", "restrictions_ignore_radius", "anomaly_memory_decay",
-                            "legacy_anomaly_ignores" })
+assign_group("detection", { "base_detection_radius", "cache_rebuild_delay", "anomaly_state_refresh",
+                            "bubble_enabled", "bubble_radius", "restrictions_ignore_radius",
+                            "anomaly_memory_decay", "legacy_anomaly_ignores" })
 assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance", "engine_feel_max_density",
-                            "block_corpse_loot_in_anomalies" })
+                            "clear_avoid_restrictors", "block_corpse_loot_in_anomalies" })
 assign_group("damage",    { "enable_armor_damage_mult", "immune_zero_miss_chance", "combat_only_damage",
                             "walking_immunity", "standing_immunity",
                             "block_anomalies_on_corpses" })
@@ -179,6 +181,7 @@ function on_mcm_load()
             subcategory("detection", "ui_mcm_nda_detection_title", {
                 { id = "base_detection_radius", type = "track", val = 2, min = 10, max = 50, step = 5, def = 30 },
                 { id = "cache_rebuild_delay",   type = "track", val = 2, min = 0, max = 5, step = 0.5, def = 2.5 },
+                { id = "anomaly_state_refresh", type = "track", val = 2, min = 0, max = 30, step = 1, def = 2 },
                 { id = "bubble_enabled",        type = "check", val = 1, def = true },
                 { id = "bubble_radius",         type = "track", val = 2, min = 50, max = 500, step = 25, def = 150 },
                 { id = "restrictions_ignore_radius", type = "check", val = 1, def = true },
@@ -190,6 +193,7 @@ function on_mcm_load()
                 { id = "npc_stuck_timeout",        type = "track", val = 2, min = 4, max = 120, step = 1, def = 20 },
                 { id = "engine_avoidance",         type = "check", val = 1, def = true },
                 { id = "engine_feel_max_density",  type = "track", val = 2, min = 1, max = 15, step = 1, def = 3 },
+                { id = "clear_avoid_restrictors",  type = "check", val = 1, def = true },
                 { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             }),
 
