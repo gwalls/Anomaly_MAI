@@ -45,21 +45,20 @@ local debug_anomalies_shown = false
 -- Optional state tracking for each NPC.
 -- Created on first access and deleted during net_destroy.
 -- Fields:
---   last_update, last_anomaly, known_anomalies, restrictions,
---   restrict_start, restrict_anchor_pos, avoid_since, push_through, pre_push_run,
---   feel_on, probed, probe_until, took_damage.
+--   detection/memory: last_anomaly, known_anomalies, last_safe_time
+--   restriction routing: restrictions, restrict_start, restrict_anchor_pos, avoid_since
+--   push-through: push_through, push_through_single, push_anchor_pos, push_anchor_time, pre_push_run
+--   feel/probe: feel_on, probed, probe_until, took_damage
 local npc_state = {}
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
 
--- Max concurrent anomaly restrictions per NPC.
--- Higher values improve routing around dense clusters, but risk "enclosure" CTDs
--- (surrounding avoid-zones removing all valid navmesh).
--- Kept low deliberately because:
---   1. Threats are sorted closest-first, so a small budget handles immediate danger.
---   2. It minimizes enclosure risk alongside existing safeguards (MIN_RESTRICT_DISTANCE 
---      and the stuck-timeout push-through).
-local MAX_RESTRICTIONS_PER_NPC = 12
+-- Max concurrent anomaly restrictions per NPC. Keep this high. The cap is a ceiling, not a
+-- crash guard -- MIN_RESTRICT_DISTANCE prevents enclosure by always leaving the NPC an
+-- accessible pocket, regardless of count. A low cap mainly causes harm: when more anomalies
+-- are in range than it allows, the kept subset shuffles as the NPC moves, re-applying
+-- restrictions every tick and producing a path-rebuild jerk.
+local MAX_RESTRICTIONS_PER_NPC = 30
 
 -- Distance threshold in meters for considering an NPC inside an anomaly.
 -- At this range:
@@ -76,11 +75,16 @@ local STUCK_PROGRESS_DIST = 8
 -- Hard ceiling on continuous avoidance, as a multiple of npc_stuck_timeout
 local STUCK_HARD_MULT = 2
 
--- Radius in meters for checking local anomaly density.
--- Determines the routing behavior based on the MCM max density setting:
--- 1. Sparse fields: Hands routing to the engine feel system to avoid all anomalies.
--- 2. Dense fields: Keeps using restrictions and push-through to prevent engine freezes and CTDs.
-local FEEL_DENSITY_RADIUS = 12
+-- Seconds to hold FEEL off before setting squad.rush_to_target on a push_through commit.
+-- Lets an in-flight bolt-throw animation finish so its CMissile leaves the hand HudItem
+-- slot before the movement transition, avoiding the CKinematics skeleton-mutex deadlock.
+local FEEL_TO_RUSH_DELAY = 1.5
+
+-- Spacing (meters) for the feeler election: a would-be feeler defers if a lower-id stalker is
+-- this close, so two bolt-throw renders don't contest the CKinematics skeleton/IK locks. Also
+-- the radius for push-through admission (a commit is denied if another squad is pushing within
+-- it). Caps simultaneous bolt-throwers regardless of the engine-side mutex fix.
+local SQUAD_CONTENTION_RADIUS = 10
 
 local pcall_failures_seen = {}
 
@@ -337,8 +341,6 @@ local function rebuild_anomaly_cache()
                     if skip_reason then
                         skipped = skipped + 1
                         skip_reasons[skip_reason] = (skip_reasons[skip_reason] or 0) + 1
-                        dbg_verbose("CACHE", "skip [%s] id=%s reason=%s",
-                            anom_name or "?", tostring(anom_id), skip_reason)
                     end
                 end
             end
@@ -853,8 +855,18 @@ local function same_restriction_set(a, b)
     return true
 end
 
+-- True if `detected` contains an anomaly the NPC hadn't already encountered (`known_before`,
+-- a name->true set). Only a genuinely new threat forces an urgent reroute -- a remembered
+-- anomaly re-entering the set (e.g. a dynamic zone blinking back on) does not.
+local function has_new_anomaly(detected, known_before)
+    for i = 1, #detected do
+        if not known_before[detected[i]] then return true end
+    end
+    return false
+end
+
 -- Per-tick snapshot of online stalker positions, rebuilt at the top of each periodic
--- tick. Lets the probe elect a cluster tester without per-NPC engine spatial queries.
+-- tick. Lets the feeler election run without per-NPC engine spatial queries.
 local tick_npc_positions = {}
 
 -- Per-tick anomaly name->pos map, built ONCE at the top of nda_periodic_tick from
@@ -862,16 +874,13 @@ local tick_npc_positions = {}
 -- O(#anomaly_cache) table per NPC per tick (was done twice per NPC in update_npc_restrictions).
 local tick_cache_by_name = {}
 
--- Assigns a single bolt prober per local cluster to prevent engine freezes.
--- An NPC qualifies only if no stalker with a lower ID is within the radius.
--- Key results:
--- 1. A lone NPC always qualifies.
--- 2. In crowds, only the lowest ID qualifies.
--- 3. Probers are always separated by at least the radius distance, avoiding multiple feeler conflicts.
-local function is_cluster_tester(self_id, self_pos, radius)
+-- Elect a feeler iff no lower-id stalker (any squad) is within SQUAD_CONTENTION_RADIUS, so
+-- two nearby bolt-throw renders can't contest the skeleton/IK locks. A lone NPC always wins;
+-- in a crowd only the lowest id wins, and winners are always at least the radius apart.
+local function is_feeler_elected(self_id, self_pos, self_squad_id)
     for i = 1, #tick_npc_positions do
         local e = tick_npc_positions[i]
-        if e.id < self_id and self_pos:distance_to(e.pos) <= radius then
+        if e.id < self_id and self_pos:distance_to(e.pos) <= SQUAD_CONTENTION_RADIUS then
             return false
         end
     end
@@ -883,19 +892,37 @@ end
 -- States:
 -- 1. ON: NPC throws bolts and the engine handles routing.
 -- 2. OFF: Uses pure restriction routing.
--- Managed exclusively here to prevent configure_npc_anomaly_interaction 
+-- Managed exclusively here to prevent configure_npc_anomaly_interaction
 -- from overwriting an active probe during throttled updates.
 local function set_npc_feel(npc, st, on)
     if st.feel_on == on then return end
     safe_call(npc.set_enable_anomalies_pathfinding, npc, on)
     st.feel_on = on
+    dbg_log("FEEL", "[%s] %s", npc:name() or "?", on and "ON" or "OFF")
 end
 
--- Commit an NPC to sprinting straight through a field (it can't route around, or got hit
--- and is fleeing). Drops restrictions and feel so the engine can't box it in, then runs.
-local function commit_push_through(npc, st, reason)
+-- Set the squad rush flag. xr_reach_task forces move.walk on members each Think unless
+-- squad.rush_to_target is set, so this field (not a per-NPC set_movement_type) is what
+-- propagates run across a squad. No-op for solo NPCs, which the direct run call handles.
+local function set_squad_rush(npc, on)
+    local squad = safe_call(get_object_squad, npc)
+    if squad then squad.rush_to_target = on end
+end
+
+-- Commit the NPC to running: direct run for solo NPCs, squad rush flag for squad members.
+local function set_squad_running(npc)
+    safe_call(npc.set_movement_type, npc, move.run)
+    set_squad_rush(npc, true)
+    dbg_log("SQUAD_RUN", "[%s] rush_to_target=true", npc:name() or "?")
+end
+
+-- Mark one NPC as pushing through: drop restrictions/feel and set state. Doesn't touch the
+-- squad rush flag (set_squad_running's job). `single` = in-contact mode (exits when clear of
+-- any damage radius); field mode (stuck) exits only when no anomalies remain nearby.
+local function enter_push_through(npc, st, reason, single)
     st.pre_push_run        = (safe_call(npc.movement_type, npc) == move.run)
     st.push_through        = true
+    st.push_through_single = single and true or nil
     st.restrictions        = nil
     st.restrict_start      = nil
     st.restrict_anchor_pos = nil
@@ -904,8 +931,128 @@ local function commit_push_through(npc, st, reason)
     st.probe_until         = nil
     set_npc_feel(npc, st, false)
     clear_npc_restrictions(npc)
-    dbg_log("PUSH_THROUGH", "[%s] sprinting through (%s)", npc:name() or "?", reason)
-    safe_call(npc.set_movement_type, npc, move.run)
+    dbg_log("PUSH_THROUGH", "[%s] sprinting through (%s, %s)", npc:name() or "?", reason, single and "single" or "field")
+end
+
+-- Stop sprinting: drop the squad rush flag, restore walk (unless the NPC was already running
+-- before the commit), and clear the push_through state fields.
+local function exit_push_through(npc, st)
+    set_squad_rush(npc, false)
+    if not st.pre_push_run then
+        safe_call(npc.set_movement_type, npc, move.walk)
+    end
+    st.push_through        = nil
+    st.push_through_single = nil
+    st.push_anchor_pos     = nil
+    st.push_anchor_time    = nil
+    st.pre_push_run        = nil
+end
+
+-- Full avoidance teardown: drop restrictions and feel, exit any push_through, and clear the
+-- routing/probe/contact state. Used when an NPC leaves all fields or the interaction bubble.
+local function reset_avoidance_state(npc, st)
+    if st.restrictions then clear_npc_restrictions(npc) end
+    set_npc_feel(npc, st, false)
+    if st.push_through then exit_push_through(npc, st) end
+    st.restrict_start      = nil
+    st.restrict_anchor_pos = nil
+    st.avoid_since         = nil
+    st.probed              = nil
+    st.probe_until         = nil
+    st.took_damage         = nil
+end
+
+-- True if a DIFFERENT squad (or solo NPC) is pushing through within SQUAD_CONTENTION_RADIUS
+-- of `pos`. my_identifier is the squad id, or the NPC id for solo NPCs.
+local function other_squad_pushing_near(pos, my_identifier)
+    for id, st in pairs(npc_state) do
+        if st.push_through then
+            local obj = level.object_by_id(id)
+            -- Skip dead bodies: npc_state survives until corpse despawn (~30 min) since
+            -- npc_on_net_destroy doesn't fire on death, so a corpse that died mid-push
+            -- would otherwise block every commit in its radius.
+            if obj and safe_call(obj.alive, obj) then
+                local obj_pos = safe_call(obj.position, obj)
+                if obj_pos and pos:distance_to(obj_pos) <= SQUAD_CONTENTION_RADIUS then
+                    local sq = safe_call(get_object_squad, obj)
+                    local their_identifier = sq and sq.id or id
+                    if their_identifier ~= my_identifier then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Push the committer + eligible squadmates into push_through, then set the squad running.
+-- Takes an id and re-resolves npc/st since a deferred call may run after the NPC moved.
+local function commit_push_through(self_id, reason, single)
+    local npc = level.object_by_id(self_id)
+    if not is_valid_stalker(npc) then return end
+    local st = npc_state[self_id]
+    if not st then return end
+
+    enter_push_through(npc, st, reason, single)
+
+    local squad = safe_call(get_object_squad, npc)
+    if squad then
+        for member in squad:squad_members() do
+            if member.id ~= self_id then
+                local mate = level.object_by_id(member.id)
+                if is_valid_stalker(mate) and should_add_restrictions(mate) then
+                    local mate_id = mate:id()
+                    local mate_st = npc_state[mate_id]
+                    if not mate_st then mate_st = {}; npc_state[mate_id] = mate_st end
+                    if not mate_st.push_through then
+                        enter_push_through(mate, mate_st, reason .. " (squadmate)", single)
+                    end
+                end
+            end
+        end
+    end
+
+    set_squad_running(npc)
+end
+
+-- Gate for a push_through commit; both guards exist to avoid the skeleton-mutex deadlock:
+--   * DENY outright if another squad is already pushing nearby (stuck/field commits only), or
+--   * DEFER by FEEL_TO_RUSH_DELAY if the NPC is mid bolt-throw, so its render finishes first.
+-- Otherwise commit now. The actual work is in commit_push_through.
+local function request_push_through(npc, st, reason, single)
+    local self_pos = safe_call(npc.position, npc)
+    local squad = safe_call(get_object_squad, npc)
+    local self_id = npc:id()
+    local my_identifier = squad and squad.id or self_id
+
+    if not single and self_pos and other_squad_pushing_near(self_pos, my_identifier) then
+        dbg_log("PUSH_THROUGH", "[%s] commit denied (other squad pushing in area)",
+            npc:name() or "?")
+        return
+    end
+
+    if st.feel_on then
+        dbg_log("PUSH_THROUGH", "[%s] commit deferred (was feeling)", npc:name() or "?")
+        CreateTimeEvent("nda_commit_delay", tostring(self_id), FEEL_TO_RUSH_DELAY, function()
+            commit_push_through(self_id, reason, single)
+            return true
+        end)
+    else
+        commit_push_through(self_id, reason, single)
+    end
+end
+
+-- True once the NPC has gone npc_stuck_timeout seconds without STUCK_PROGRESS_DIST of net
+-- progress. Re-anchors on progress. anchor_key/time_key pick the state fields, so it serves
+-- both stalls.
+local function stuck_since(st, anchor_key, time_key, npc_pos, now)
+    if not st[anchor_key] or not st[time_key]
+       or npc_pos:distance_to(st[anchor_key]) >= STUCK_PROGRESS_DIST then
+        st[anchor_key], st[time_key] = npc_pos, now
+        return false
+    end
+    return (now - st[time_key]) > get_mcm_setting("npc_stuck_timeout", 20) * 1000
 end
 
 -- Stall test shared by both avoidance branches.
@@ -933,6 +1080,7 @@ end
 local function reset_npc_anomaly_state(npc)
     if not is_valid_object(npc) then return end
     safe_call(npc.set_enable_anomalies_damage, npc, false)
+    set_squad_rush(npc, false)
     local st = npc_state[safe_call(npc.id, npc)]
     if st then
         if st.restrictions then clear_npc_restrictions(npc) end
@@ -944,6 +1092,9 @@ local function reset_npc_anomaly_state(npc)
         st.restrict_anchor_pos = nil
         st.avoid_since         = nil
         st.push_through        = nil
+        st.push_through_single = nil
+        st.push_anchor_pos     = nil
+        st.push_anchor_time    = nil
         st.pre_push_run        = nil
         st.probed              = nil
         st.probe_until         = nil
@@ -976,31 +1127,23 @@ local function update_npc_restrictions(npc, detection_radius)
     local st = npc_state[id]
     if not st then st = {}; npc_state[id] = st end
 
-    if st.last_update and current_time - st.last_update < 1500 then
-        return
-    end
-    st.last_update = current_time
-
     local npc_pos = get_position_copy(npc)
     if not npc_pos then return end
 
     local radius = detection_radius or get_mcm_setting("base_detection_radius", 30)
     local nearby = get_nearby_anomalies(npc_pos, radius)
 
-    if #nearby == 0 then
-        if st.restrictions then clear_npc_restrictions(npc) end
-        set_npc_feel(npc, st, false)
-        if st.push_through and not st.pre_push_run then
-            safe_call(npc.set_movement_type, npc, move.walk)
+    -- Safety net: force-enable movement for any NPC in a damage radius, so a scheme that
+    -- disabled movement can't park it in the zone.
+    for _, anom in ipairs(nearby) do
+        if anom.pos and npc_pos:distance_to(anom.pos) <= MIN_RESTRICT_DISTANCE then
+            safe_call(npc.movement_enabled, npc, true)
+            break
         end
-        st.restrict_start      = nil
-        st.restrict_anchor_pos = nil
-        st.avoid_since         = nil
-        st.push_through        = nil
-        st.pre_push_run        = nil
-        st.probed              = nil
-        st.probe_until         = nil
-        st.took_damage         = nil
+    end
+
+    if #nearby == 0 then
+        reset_avoidance_state(npc, st)
 
         -- Decay anomaly memory while NPC is away from all anomaly fields.
         local mem_decay_ms = get_mcm_setting("anomaly_memory_decay", 30) * 1000
@@ -1008,11 +1151,11 @@ local function update_npc_restrictions(npc, detection_radius)
             local known = st.known_anomalies
             local cache_by_name = tick_cache_by_name
             for anom_name, mem in pairs(known) do
+                local stale = (current_time - mem.last_seen) > mem_decay_ms
                 local c_pos = cache_by_name[anom_name]
                 if not c_pos then
-                    known[anom_name] = nil
-                elseif npc_pos:distance_to(c_pos) > 2 * radius
-                        and (current_time - mem.last_seen) > mem_decay_ms then
+                    if stale then known[anom_name] = nil end
+                elseif npc_pos:distance_to(c_pos) > 2 * radius and stale then
                     known[anom_name] = nil
                 end
             end
@@ -1021,28 +1164,50 @@ local function update_npc_restrictions(npc, detection_radius)
         return
     end
 
-    -- Push through state where the NPC has committed to crossing.
-    -- Restrictions and feel systems are already disabled.
-    -- We avoid reissuing the run command every tick because:
-    -- 1. Free NPCs maintain their run state automatically.
-    -- 2. Scheme driven squad NPCs revert to walking between ticks anyway.
-    -- 3. Spamming the run command just causes animation flickering.
-    -- The only requirement here is to keep the NPC unrestricted.
+    -- Push-through: NPC has committed to crossing (restrictions/feel already dropped). Re-
+    -- assert the rush flag each tick since a squadmate exiting push_through clears it.
     if st.push_through then
-        if st.restrictions then clear_npc_restrictions(npc) end
-        set_npc_feel(npc, st, false)
-        return
+        if st.push_through_single and not is_position_in_anomaly(npc_pos, MIN_RESTRICT_DISTANCE) then
+            -- Single mode, clear of the damage AoE: end push_through and fall through to
+            -- normal detection so restrictions can re-engage on any other nearby anomalies.
+            exit_push_through(npc, st)
+            dbg_log("PUSH_THROUGH", "[%s] cleared (out of damage AoE)", npc:name() or "?")
+            -- fall through to normal detection/restriction logic
+        else
+            -- Still committed: keep restrictions/feel off and run. Direct set_movement_type
+            -- here (not just the squad rush flag, which only moves xr_reach_task NPCs) makes
+            -- propagated squadmates actually sprint instead of walking through defenseless.
+            if st.restrictions then clear_npc_restrictions(npc) end
+            set_npc_feel(npc, st, false)
+            set_squad_rush(npc, true)
+            safe_call(npc.set_movement_type, npc, move.run)
+
+            -- Stuck while sprinting? (no net progress for the timeout)
+            if stuck_since(st, "push_anchor_pos", "push_anchor_time", npc_pos, current_time) then
+                if st.push_through_single then
+                    -- escalate single -> field so it commits to crossing the whole cluster
+                    st.push_through_single = nil
+                    st.push_anchor_time    = current_time
+                    dbg_log("PUSH_THROUGH", "[%s] stuck in single mode -> escalated to field",
+                        npc:name() or "?")
+                else
+                    -- Field-stuck: reset the timer to avoid log spam. The per-tick direct run
+                    -- (maintain block) is the only lever to get it moving.
+                    -- TODO: add further escalation if NPCs are still stuck
+                    st.push_anchor_time = current_time
+                    dbg_log("PUSH_THROUGH", "[%s] stuck in field mode", npc:name() or "?")
+                end
+            end
+
+            return
+        end
     end
 
-    -- NPC took anomaly damage since the last update.
-    -- Behavior during contact:
-    -- 1. Stops routing and probing.
-    -- 2. Commits to sprinting out immediately.
-    -- Uses a boolean flag cleared on read instead of a time window. This ensures 
-    -- intermittent damage is not missed between the two second update ticks.
+    -- In contact: took a hit since the last tick. Commit to sprinting out in single mode
+    -- (exits as soon as clear of the damage AoE rather than the whole cluster).
     if st.took_damage then
         st.took_damage = nil
-        commit_push_through(npc, st, "in contact")
+        request_push_through(npc, st, "in contact", true)
         return
     end
 
@@ -1057,6 +1222,16 @@ local function update_npc_restrictions(npc, detection_radius)
     if is_safe_immune_state(npc) then
         final_miss = 0
         st.last_safe_time = current_time   -- feeds the running grace window (should_enable_anomaly_damage)
+    end
+
+    -- Anomalies the NPC already knew coming into this tick (memory + last tick's restricted
+    -- set). Used to gate the reroute: a name in here re-entering the set isn't a new threat.
+    local known_before = {}
+    if st.known_anomalies then
+        for name in pairs(st.known_anomalies) do known_before[name] = true end
+    end
+    if st.restrictions then
+        for _, n in ipairs(st.restrictions) do known_before[n] = true end
     end
 
     local detected = {}
@@ -1120,13 +1295,13 @@ local function update_npc_restrictions(npc, detection_radius)
         local known = st.known_anomalies
         local cache_by_name = tick_cache_by_name
 
-        -- Add remembered anomalies not caught by this detection roll (up to cap).
+        -- Add remembered anomalies not caught by this detection roll (up to cap). A disabled
+        -- dynamic anomaly has no cache pos this tick; skip it but keep it remembered (decay
+        -- below handles removal) so its re-enable isn't treated as a brand-new threat.
         for anom_name, mem in pairs(known) do
             if #detected >= MAX_RESTRICTIONS_PER_NPC then break end
             local c_pos = cache_by_name[anom_name]
-            if not c_pos then
-                known[anom_name] = nil
-            else
+            if c_pos then
                 local dist = npc_pos:distance_to(c_pos)
                 if dist <= 2 * radius and dist >= MIN_RESTRICT_DISTANCE then
                     local already = false
@@ -1147,66 +1322,61 @@ local function update_npc_restrictions(npc, detection_radius)
             known[anom_name] = { last_seen = current_time }
         end
 
-        -- Decay: forget anomalies that are far away and stale.
+        -- Decay by staleness, not cache-absence: a cycling anomaly in its off-phase keeps its
+        -- memory entry (so a fast blink doesn't read as new); only drop it once it's been
+        -- unseen past the memory window, or it's gone far away and stale.
         for anom_name, mem in pairs(known) do
+            local stale = (current_time - mem.last_seen) > mem_decay_ms
             local c_pos = cache_by_name[anom_name]
             if not c_pos then
-                known[anom_name] = nil
-            elseif npc_pos:distance_to(c_pos) > 2 * radius
-                    and (current_time - mem.last_seen) > mem_decay_ms then
+                if stale then known[anom_name] = nil end
+            elseif npc_pos:distance_to(c_pos) > 2 * radius and stale then
                 known[anom_name] = nil
                 dbg_verbose("MEMORY", "[%s] forgot [%s]", npc:name() or "?", anom_name)
             end
         end
     end
 
-    if #detected > 0 then
-        -- Density gated engine avoidance controlled via an MCM toggle and threshold.
-        -- Behavior based on local density:
-        -- 1. Sparse fields: Hands routing to the engine feel system (CStalkerActionGetOutOfAnomaly). 
-        --    This successfully routes around all anomaly types, bypassing the navmesh limitations 
-        --    of add_restrictions.
-        -- 2. Dense fields: Avoids the feel system to prevent multi prober freezes and enclosure CTDs.
-        if get_mcm_setting("engine_avoidance", true) then
-            local max_density = get_mcm_setting("engine_feel_max_density", 3)
-            local local_density = 0
-            for _, anom in ipairs(nearby) do
-                if anom.pos and npc_pos:distance_to(anom.pos) <= FEEL_DENSITY_RADIUS then
-                    local_density = local_density + 1
-                    if local_density > max_density then break end
-                end
-            end
-            if local_density <= max_density then
-                -- Sparse: feel ON; drop our (possibly inert) restrictions and let the engine
-                -- route + throw bolts. Stuck backstop sprints out if it can't get past.
-                if st.restrictions then clear_npc_restrictions(npc) end
-                set_npc_feel(npc, st, true)
-                local feel_stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
-                if avoidance_stalled(st, npc_pos, current_time, feel_stuck_ms) then
-                    commit_push_through(npc, st, "stuck (engine avoidance)")
-                end
-                return
-            end
-        end
+    -- FEEL election runs regardless of the detection roll: feel (engine routing + bolts) goes
+    -- to ONE elected NPC per SQUAD_CONTENTION_RADIUS, which is the cell's scout. It must feel
+    -- even on a tick it personally rolled a miss (with g_ai_die_in_anomaly = 0 the engine
+    -- ignores anomalies otherwise) -- gating feel on the detection roll collapses to almost no
+    -- feeling, since the lowest-id NPC usually isn't the one that detected. Detection gates
+    -- restrictions (below), not feel.
+    local feel_on = false
+    if get_mcm_setting("engine_avoidance", true) then
+        local self_squad = safe_call(get_object_squad, npc)
+        local self_squad_id = self_squad and self_squad.id or nil
+        feel_on = is_feeler_elected(id, npc_pos, self_squad_id)
+    end
+    set_npc_feel(npc, st, feel_on)
 
-        -- Dense field (or engine avoidance off): restriction-based avoidance, feel off.
-        -- Only re-issue when the set changed -- re-applying an identical set every tick
-        -- forces a path rebuild and makes the NPC stutter-step ~every 2s.
-        set_npc_feel(npc, st, false)
+    if #detected > 0 then
+        -- Apply restrictions (hard navmesh obstacles for shape-blocking types; a no-op for
+        -- shapeless electric/acidic, which only the elected feeler can route around). Only
+        -- re-issue on change -- re-applying an identical set every tick forces a path rebuild
+        -- and makes the NPC stutter-step ~every 2s.
         if not same_restriction_set(detected, st.restrictions) then
+            -- Only force an immediate reroute for a genuinely new anomaly. Shrinks, reshuffles,
+            -- and dynamic zones blinking back on don't need one -- invalidating on every change
+            -- rebuilds the path each tick and creates some thrash.
+            local grew = has_new_anomaly(detected, known_before)
             clear_npc_restrictions(npc)
             safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
+            if grew then safe_call(npc.invalidate_restrictions, npc) end  -- 2026.6.1+ API
             st.restrictions = detected
-            dbg_verbose("RESTRICT", "[%s] applied %d restrictions", npc:name() or "?", #detected)
+            dbg_verbose("RESTRICT", "[%s] applied %d restrictions%s",
+                npc:name() or "?", #detected, grew and " (grew)" or "")
         end
 
+        -- Stuck routing around the field? Give up and sprint through.
         local stuck_ms = get_mcm_setting("npc_stuck_timeout", 20) * 1000
         if avoidance_stalled(st, npc_pos, current_time, stuck_ms) then
-            commit_push_through(npc, st, "stuck routing around")
+            request_push_through(npc, st, "stuck in field", false)
         end
     else
-        -- Failed the rank roll: didn't notice. Clear restrictions/feel and walk through.
-        set_npc_feel(npc, st, false)
+        -- Detected nothing this tick: clear restrictions and reset the stuck timer. FEEL
+        -- stays as the election set it so the elected feeler can still feel-touch anomalies.
         clear_npc_restrictions(npc)
         st.restrict_start      = nil
         st.restrict_anchor_pos = nil
@@ -1572,8 +1742,8 @@ local function nda_periodic_tick()
     
     if not actor_pos then return end
 
-    -- Snapshot online stalker positions for the probe's tester election
-    -- (is_cluster_tester). Rebuilt each tick so it reflects current positions.
+    -- Snapshot online stalker positions for the feeler election
+    -- (is_feeler_elected). Rebuilt each tick so it reflects current positions.
     local snap = {}
     for _, sval in pairs(db.OnlineStalkers or {}) do
         local sobj = sval
@@ -1581,7 +1751,7 @@ local function nda_periodic_tick()
         if is_valid_stalker(sobj) then
             local p = get_position_copy(sobj)
             -- db.OnlineStalkers is an index-keyed array, so the table key is NOT the id;
-            -- store the real object id or the id comparison in is_cluster_tester breaks.
+            -- store the real object id or the id comparison in is_feeler_elected breaks.
             if p then snap[#snap + 1] = { id = safe_call(sobj.id, sobj), pos = p } end
         end
     end

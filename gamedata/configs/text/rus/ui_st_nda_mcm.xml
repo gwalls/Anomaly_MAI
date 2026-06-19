@@ -453,14 +453,7 @@
         <text>Engine Avoidance (feel)</text>
     </string>
     <string id="ui_mcm_nda_engine_avoidance_desc">
-        <text>In sparse anomaly fields, let the engine's native feel system route NPCs around anomalies (they also throw bolts). This avoids ALL anomaly types, unlike script restrictions which only block types whose shape catches the navmesh (acidic/electric are not blockable). Restricted to sparse fields because feel can freeze or crash in dense/enclosed ones; turn OFF for maximum stability. Default: ON</text>
-    </string>
-
-    <string id="ui_mcm_nda_engine_feel_max_density">
-        <text>Feel Density Limit</text>
-    </string>
-    <string id="ui_mcm_nda_engine_feel_max_density_desc">
-        <text>Max anomalies within ~12m for a field to count as "sparse" and use engine feel avoidance. Denser fields fall back to script restrictions + sprint-through. Higher = feel used in more crowded fields (better avoidance, more freeze/crash risk); lower = safer. Default: 3</text>
+        <text>Let NPCs use the engine's native feel system (throwing bolts) to route around anomalies. This avoids ALL anomaly types, unlike script restrictions which only block types whose shape catches the navmesh (acidic/electric are not blockable). To stop multiple simultaneous bolt-throwers from freezing or crashing the engine, only one NPC per ~10m is elected to feel at a time; the rest rely on script restrictions and sprint-through. Turn OFF for maximum stability. Default: ON</text>
     </string>
 
     <string id="ui_mcm_nda_clear_avoid_restrictors">
