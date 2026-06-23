@@ -857,10 +857,18 @@ end
 
 -- True if `detected` contains an anomaly the NPC hadn't already encountered (`known_before`,
 -- a name->true set). Only a genuinely new threat forces an urgent reroute -- a remembered
--- anomaly re-entering the set (e.g. a dynamic zone blinking back on) does not.
-local function has_new_anomaly(detected, known_before)
+-- anomaly re-entering the set (e.g. a dynamic zone blinking back on) does not. Distance-gated:
+-- only a new anomaly that's CLOSE forces the reroute. A far one entering the detection rim
+-- still gets its border set, but forcing a rebuild for it every tick is the ~2s move stutter.
+local function has_close_new_anomaly(detected, known_before, npc_pos, max_dist, cache_by_name)
     for i = 1, #detected do
-        if not known_before[detected[i]] then return true end
+        local name = detected[i]
+        if not known_before[name] then
+            local c_pos = cache_by_name[name]
+            if c_pos and npc_pos:distance_to(c_pos) <= max_dist then
+                return true
+            end
+        end
     end
     return false
 end
@@ -1119,7 +1127,6 @@ local function npc_inside_anomaly(npc)
 end
 
 local function update_npc_restrictions(npc, detection_radius)
-    if not should_add_restrictions(npc) then return end
     if not is_valid_stalker(npc) then return end
 
     local id = npc:id()
@@ -1210,6 +1217,12 @@ local function update_npc_restrictions(npc, detection_radius)
         request_push_through(npc, st, "in contact", true)
         return
     end
+
+    -- Everything below is proactive avoidance (detection roll, feel election, restrictions).
+    -- NPCs excluded from routing -- static-post jobs, companions, task targets, ignored
+    -- sections -- still reach the push-through maintain + in-contact escape above, so a burning
+    -- one always bolts; they just get no proactive routing. Gate here, not at the top.
+    if not should_add_restrictions(npc) then return end
 
     local miss_chance = get_rank_miss_chance(npc)
     local state_mult = get_movement_state_multiplier(npc)
@@ -1356,17 +1369,18 @@ local function update_npc_restrictions(npc, detection_radius)
         -- shapeless electric/acidic, which only the elected feeler can route around). Only
         -- re-issue on change -- re-applying an identical set every tick forces a path rebuild
         -- and makes the NPC stutter-step ~every 2s.
-        if not same_restriction_set(detected, st.restrictions) then
-            -- Only force an immediate reroute for a genuinely new anomaly. Shrinks, reshuffles,
-            -- and dynamic zones blinking back on don't need one -- invalidating on every change
-            -- rebuilds the path each tick and creates some thrash.
-            local grew = has_new_anomaly(detected, known_before)
+        if not same_restriction_set(detected, st.restrictions) then 
+            -- Force an immediate reroute only for a CLOSE new anomaly. add_restrictions just
+            -- updates the border set (silent -- the engine uses it on its next recompute);
+            -- invalidate_restrictions forces the rebuild now. A far new anomaly entering the
+            -- rim doesn't need that, so gate invalidate to within half the detection radius.
+            local reroute = has_close_new_anomaly(detected, known_before, npc_pos, radius * 0.5, tick_cache_by_name)
             clear_npc_restrictions(npc)
             safe_call(npc.add_restrictions, npc, "", tconcat(detected, ","))
-            if grew then safe_call(npc.invalidate_restrictions, npc) end  -- 2026.6.1+ API
+            if reroute then safe_call(npc.invalidate_restrictions, npc) end  -- 2026.6.1+ API
             st.restrictions = detected
             dbg_verbose("RESTRICT", "[%s] applied %d restrictions%s",
-                npc:name() or "?", #detected, grew and " (grew)" or "")
+                npc:name() or "?", #detected, reroute and " (reroute)" or "")
         end
 
         -- Stuck routing around the field? Give up and sprint through.
