@@ -48,7 +48,7 @@ local debug_anomalies_shown = false
 --   detection/memory: last_anomaly, known_anomalies, last_safe_time
 --   restriction routing: restrictions, restrict_start, restrict_anchor_pos, avoid_since
 --   push-through: push_through, push_through_single, push_anchor_pos, push_anchor_time, pre_push_run
---   feel/probe: feel_on, probed, probe_until, took_damage
+--   feel/probe: feel_on, probed, probe_until, took_damage, contacted
 local npc_state = {}
 
 local ANOMALY_ATTRIBUTION_TIMEOUT = 5000
@@ -937,6 +937,7 @@ local function enter_push_through(npc, st, reason, single)
     st.avoid_since         = nil
     st.probed              = nil
     st.probe_until         = nil
+    st.contacted           = nil
     set_npc_feel(npc, st, false)
     clear_npc_restrictions(npc)
     dbg_log("PUSH_THROUGH", "[%s] sprinting through (%s, %s)", npc:name() or "?", reason, single and "single" or "field")
@@ -968,6 +969,7 @@ local function reset_avoidance_state(npc, st)
     st.probed              = nil
     st.probe_until         = nil
     st.took_damage         = nil
+    st.contacted           = nil
 end
 
 -- True if a DIFFERENT squad (or solo NPC) is pushing through within SQUAD_CONTENTION_RADIUS
@@ -1210,12 +1212,28 @@ local function update_npc_restrictions(npc, detection_radius)
         end
     end
 
-    -- In contact: took a hit since the last tick. Commit to sprinting out in single mode
-    -- (exits as soon as clear of the damage AoE rather than the whole cluster).
+    -- In contact: took a hit since the last tick.
     if st.took_damage then
         st.took_damage = nil
-        request_push_through(npc, st, "in contact", true)
-        return
+        -- Discover-on-contact: if this NPC is the cell's feeler (already probing), a FIRST hit
+        -- isn't a reason to flee. Force the zone that hit it into memory as a known threat (it
+        -- was an undetected zone it walked into) and keep feeling, so the engine back-away can
+        -- pull it out instead of a blind sprint deeper into a dense field. Sprint only on a
+        -- REPEAT hit (probing failed) or if it isn't a feeler. Gated on st.feel_on so only the
+        -- ~1 feeler per cell holds; everyone else bolts immediately (no contact-thrash).
+        if st.feel_on and not st.contacted then
+            st.contacted = true
+            if st.last_anomaly and st.last_anomaly.name then
+                st.known_anomalies = st.known_anomalies or {}
+                st.known_anomalies[st.last_anomaly.name] = { last_seen = current_time, detected = true }
+            end
+            dbg_log("PUSH_THROUGH", "[%s] first contact while feeling -> discovered [%s], holding",
+                npc:name() or "?", st.last_anomaly and st.last_anomaly.name or "?")
+            -- fall through to detection/feel (now avoids the discovered zone)
+        else
+            request_push_through(npc, st, "in contact", true)
+            return
+        end
     end
 
     -- Everything below is proactive avoidance (detection roll, feel election, restrictions).
