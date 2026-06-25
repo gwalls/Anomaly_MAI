@@ -27,6 +27,7 @@ local defaults = {
     -- avoidance
     npc_stuck_timeout = 20,
     engine_avoidance = true,
+    squad_contention_radius = 4,
     clear_avoid_restrictors = true,
 
     -- damage
@@ -107,7 +108,7 @@ assign_group("debug",     { "debug_mode", "verbose_debug", "show_debug_anomalies
 assign_group("detection", { "base_detection_radius", "cache_rebuild_delay", "anomaly_state_refresh",
                             "bubble_enabled", "bubble_radius", "restrictions_ignore_radius",
                             "anomaly_memory_decay", "legacy_anomaly_ignores" })
-assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance",
+assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance", "squad_contention_radius",
                             "clear_avoid_restrictors", "block_corpse_loot_in_anomalies" })
 assign_group("damage",    { "enable_armor_damage_mult", "immune_zero_miss_chance", "combat_only_damage",
                             "walking_immunity", "standing_immunity",
@@ -191,6 +192,7 @@ function on_mcm_load()
             subcategory("avoidance", "ui_mcm_nda_pathfinding_title", {
                 { id = "npc_stuck_timeout",        type = "track", val = 2, min = 4, max = 120, step = 1, def = 20 },
                 { id = "engine_avoidance",         type = "check", val = 1, def = true },
+                { id = "squad_contention_radius",  type = "track", val = 2, min = 0, max = 50, step = 1, def = 4 },
                 { id = "clear_avoid_restrictors",  type = "check", val = 1, def = true },
                 { id = "block_corpse_loot_in_anomalies", type = "check", val = 1, def = true },
             }),

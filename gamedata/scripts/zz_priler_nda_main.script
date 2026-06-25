@@ -80,12 +80,6 @@ local STUCK_HARD_MULT = 2
 -- slot before the movement transition, avoiding the CKinematics skeleton-mutex deadlock.
 local FEEL_TO_RUSH_DELAY = 1.5
 
--- Spacing (meters) for the feeler election: a would-be feeler defers if a lower-id stalker is
--- this close, so two bolt-throw renders don't contest the CKinematics skeleton/IK locks. Also
--- the radius for push-through admission (a commit is denied if another squad is pushing within
--- it). Caps simultaneous bolt-throwers regardless of the engine-side mutex fix.
-local SQUAD_CONTENTION_RADIUS = 10
-
 local pcall_failures_seen = {}
 
 
@@ -882,13 +876,14 @@ local tick_npc_positions = {}
 -- O(#anomaly_cache) table per NPC per tick (was done twice per NPC in update_npc_restrictions).
 local tick_cache_by_name = {}
 
--- Elect a feeler iff no lower-id stalker (any squad) is within SQUAD_CONTENTION_RADIUS, so
+-- Elect a feeler iff no lower-id stalker (any squad) is within the squad-contention radius, so
 -- two nearby bolt-throw renders can't contest the skeleton/IK locks. A lone NPC always wins;
 -- in a crowd only the lowest id wins, and winners are always at least the radius apart.
 local function is_feeler_elected(self_id, self_pos, self_squad_id)
+    local radius = get_mcm_setting("squad_contention_radius", 4)
     for i = 1, #tick_npc_positions do
         local e = tick_npc_positions[i]
-        if e.id < self_id and self_pos:distance_to(e.pos) <= SQUAD_CONTENTION_RADIUS then
+        if e.id < self_id and self_pos:distance_to(e.pos) <= radius then
             return false
         end
     end
@@ -972,9 +967,10 @@ local function reset_avoidance_state(npc, st)
     st.contacted           = nil
 end
 
--- True if a DIFFERENT squad (or solo NPC) is pushing through within SQUAD_CONTENTION_RADIUS
--- of `pos`. my_identifier is the squad id, or the NPC id for solo NPCs.
+-- True if a DIFFERENT squad (or solo NPC) is pushing through within the squad-contention
+-- radius of `pos`. my_identifier is the squad id, or the NPC id for solo NPCs.
 local function other_squad_pushing_near(pos, my_identifier)
+    local radius = get_mcm_setting("squad_contention_radius", 4)
     for id, st in pairs(npc_state) do
         if st.push_through then
             local obj = level.object_by_id(id)
@@ -983,7 +979,7 @@ local function other_squad_pushing_near(pos, my_identifier)
             -- would otherwise block every commit in its radius.
             if obj and safe_call(obj.alive, obj) then
                 local obj_pos = safe_call(obj.position, obj)
-                if obj_pos and pos:distance_to(obj_pos) <= SQUAD_CONTENTION_RADIUS then
+                if obj_pos and pos:distance_to(obj_pos) <= radius then
                     local sq = safe_call(get_object_squad, obj)
                     local their_identifier = sq and sq.id or id
                     if their_identifier ~= my_identifier then
@@ -1375,7 +1371,7 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 
     -- FEEL election runs regardless of the detection roll: feel (engine routing + bolts) goes
-    -- to ONE elected NPC per SQUAD_CONTENTION_RADIUS, which is the cell's scout. It must feel
+    -- to ONE elected NPC per squad-contention radius, which is the cell's scout. It must feel
     -- even on a tick it personally rolled a miss (with g_ai_die_in_anomaly = 0 the engine
     -- ignores anomalies otherwise) -- gating feel on the detection roll collapses to almost no
     -- feeling, since the lowest-id NPC usually isn't the one that detected. Detection gates
