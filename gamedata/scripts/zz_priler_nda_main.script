@@ -1090,28 +1090,14 @@ end
 local function reset_npc_anomaly_state(npc)
     if not is_valid_object(npc) then return end
     safe_call(npc.set_enable_anomalies_damage, npc, false)
-    set_squad_rush(npc, false)
     local st = npc_state[safe_call(npc.id, npc)]
     if st then
-        if st.restrictions then clear_npc_restrictions(npc) end
-        set_npc_feel(npc, st, false)
-        if st.push_through and not st.pre_push_run then
-            safe_call(npc.set_movement_type, npc, move.walk)
-        end
-        st.restrict_start      = nil
-        st.restrict_anchor_pos = nil
-        st.avoid_since         = nil
-        st.push_through        = nil
-        st.push_through_single = nil
-        st.push_anchor_pos     = nil
-        st.push_anchor_time    = nil
-        st.pre_push_run        = nil
-        st.probed              = nil
-        st.probe_until         = nil
+        reset_avoidance_state(npc, st)   -- shared teardown (also drops squad rush via exit_push_through)
     else
-        -- No tracked state (state wiped, or NPC flagged earlier this session): force the
-        -- engine flag off directly, since set_npc_feel needs st to dedupe
+        -- No tracked state (wiped, or flagged earlier): set_npc_feel needs st to dedupe, so
+        -- force the engine flags off directly.
         safe_call(npc.set_enable_anomalies_pathfinding, npc, false)
+        set_squad_rush(npc, false)
     end
 end
 
@@ -1290,6 +1276,8 @@ local function update_npc_restrictions(npc, detection_radius)
         known = st.known_anomalies
     end
 
+    local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
+
     for idx, anom in ipairs(nearby) do
         -- An anomaly the NPC is already inside can't be routed around, so don't treat it as a
         -- fresh detection -- push-through handles getting it out.
@@ -1310,7 +1298,7 @@ local function update_npc_restrictions(npc, detection_radius)
         if too_close then
             dbg_verbose("DETECT", "[%s] skipped [%s] (already inside zone)",
                 npc:name() or "?", anom.name)
-        elseif get_mcm_setting("immune_zero_miss_chance", true) and final_miss <= 0 then
+        elseif immune_zero and final_miss <= 0 then
             tinsert(detected, anom.name)
             if mem_on then known[anom.name] = { last_seen = current_time, detected = true } end
         else
