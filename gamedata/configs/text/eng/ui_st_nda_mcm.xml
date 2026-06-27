@@ -453,14 +453,7 @@
         <text>Engine Avoidance (feel)</text>
     </string>
     <string id="ui_mcm_nda_engine_avoidance_desc">
-        <text>Let NPCs use the engine's native feel system (throwing bolts) to route around anomalies. This avoids ALL anomaly types, unlike script restrictions which only block types whose shape catches the navmesh (acidic/electric are not blockable). To stop multiple simultaneous bolt-throwers from freezing or crashing the engine, only one NPC per Feeler Spacing metres is elected to feel at a time; the rest rely on script restrictions and sprint-through. Turn OFF for maximum stability. Default: ON</text>
-    </string>
-
-    <string id="ui_mcm_nda_squad_contention_radius">
-        <text>Feeler Spacing (m)</text>
-    </string>
-    <string id="ui_mcm_nda_squad_contention_radius_desc">
-        <text>Minimum spacing between bolt-throwing feelers: only one NPC per this many metres feels/throws bolts at a time (and a stuck squad won't commit a sprint-through if another squad is already pushing within it). Lower = more feelers (denser avoidance, more bolts thrown); higher = fewer. 0 = every NPC feels. Default: 4</text>
+        <text>Let NPCs use the engine's native feel system (throwing bolts) to route around anomalies. This avoids ALL anomaly types, unlike script restrictions which only block types whose shape catches the navmesh (acidic/electric are not blockable). One scout per squad probes proactively, and any NPC that takes a hit also probes while it backs away. Turn OFF for maximum stability. Default: ON</text>
     </string>
 
     <string id="ui_mcm_nda_clear_avoid_restrictors">

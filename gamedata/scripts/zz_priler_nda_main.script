@@ -965,31 +965,6 @@ local function reset_avoidance_state(npc, st)
     st.contacted           = nil
 end
 
--- True if a DIFFERENT squad (or solo NPC) is pushing through within the squad-contention
--- radius of `pos`. my_identifier is the squad id, or the NPC id for solo NPCs.
-local function other_squad_pushing_near(pos, my_identifier)
-    local radius = get_mcm_setting("squad_contention_radius", 4)
-    for id, st in pairs(npc_state) do
-        if st.push_through then
-            local obj = level.object_by_id(id)
-            -- Skip dead bodies: npc_state survives until corpse despawn (~30 min) since
-            -- npc_on_net_destroy doesn't fire on death, so a corpse that died mid-push
-            -- would otherwise block every commit in its radius.
-            if obj and safe_call(obj.alive, obj) then
-                local obj_pos = safe_call(obj.position, obj)
-                if obj_pos and pos:distance_to(obj_pos) <= radius then
-                    local sq = safe_call(get_object_squad, obj)
-                    local their_identifier = sq and sq.id or id
-                    if their_identifier ~= my_identifier then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
-
 -- Commit only THIS NPC to push_through, then set the squad running. Individual rush: the
 -- committer drops restrictions/feel and sprints out; squadmates are NOT dragged in -- they keep
 -- their own avoidance (scout/victim feel, restriction routing) and just hurry via the squad
@@ -1005,22 +980,11 @@ local function commit_push_through(self_id, reason, single)
     set_squad_running(npc)
 end
 
--- Gate for a push_through commit; both guards exist to avoid the skeleton-mutex deadlock:
---   * DENY outright if another squad is already pushing nearby (stuck/field commits only), or
---   * DEFER by FEEL_TO_RUSH_DELAY if the NPC is mid bolt-throw, so its render finishes first.
--- Otherwise commit now. The actual work is in commit_push_through.
+-- Gate for a push_through commit: if the NPC is mid bolt-throw, defer by FEEL_TO_RUSH_DELAY so
+-- its render finishes before the movement transition; otherwise commit now. The actual work is
+-- in commit_push_through.
 local function request_push_through(npc, st, reason, single)
-    local self_pos = safe_call(npc.position, npc)
-    local squad = safe_call(get_object_squad, npc)
     local self_id = npc:id()
-    local my_identifier = squad and squad.id or self_id
-
-    if not single and self_pos and other_squad_pushing_near(self_pos, my_identifier) then
-        dbg_log("PUSH_THROUGH", "[%s] commit denied (other squad pushing in area)",
-            npc:name() or "?")
-        return
-    end
-
     if st.feel_on then
         dbg_log("PUSH_THROUGH", "[%s] commit deferred (was feeling)", npc:name() or "?")
         CreateTimeEvent("nda_commit_delay", tostring(self_id), FEEL_TO_RUSH_DELAY, function()
