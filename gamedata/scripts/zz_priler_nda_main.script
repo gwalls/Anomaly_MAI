@@ -867,23 +867,21 @@ local function has_close_new_anomaly(detected, known_before, npc_pos, max_dist, 
     return false
 end
 
--- Per-tick snapshot of online stalker positions, rebuilt at the top of each periodic
--- tick. Lets the feeler election run without per-NPC engine spatial queries.
-local tick_npc_positions = {}
-
 -- Per-tick anomaly name->pos map, built ONCE at the top of nda_periodic_tick from
 -- anomaly_cache and reused by every NPC's memory bookkeeping below. Avoids rebuilding an
 -- O(#anomaly_cache) table per NPC per tick (was done twice per NPC in update_npc_restrictions).
 local tick_cache_by_name = {}
 
--- Elect a feeler iff no lower-id stalker (any squad) is within the squad-contention radius, so
--- two nearby bolt-throw renders can't contest the skeleton/IK locks. A lone NPC always wins;
--- in a crowd only the lowest id wins, and winners are always at least the radius apart.
-local function is_feeler_elected(self_id, self_pos, self_squad_id)
-    local radius = get_mcm_setting("squad_contention_radius", 4)
-    for i = 1, #tick_npc_positions do
-        local e = tick_npc_positions[i]
-        if e.id < self_id and self_pos:distance_to(e.pos) <= radius then
+-- True if `npc` is its squad's scout: the lowest-id alive online member. The scout feels
+-- (throws bolts / lets the engine route it) proactively, so a squad always has one prober and
+-- shapeless fields get scouted before contact. A solo NPC is its own scout. One scout per squad
+-- caps proactive bolt-throwers without a spatial election.
+local function is_squad_scout(npc)
+    local squad = safe_call(get_object_squad, npc)
+    if not squad then return true end
+    local self_id = npc:id()
+    for member in squad:squad_members() do
+        if member.id < self_id and is_valid_stalker(level.object_by_id(member.id)) then
             return false
         end
     end
@@ -1197,21 +1195,20 @@ local function update_npc_restrictions(npc, detection_radius)
     -- In contact: took a hit since the last tick.
     if st.took_damage then
         st.took_damage = nil
-        -- Discover-on-contact: if this NPC is the cell's feeler (already probing), a FIRST hit
-        -- isn't a reason to flee. Force the zone that hit it into memory as a known threat (it
-        -- was an undetected zone it walked into) and keep feeling, so the engine back-away can
-        -- pull it out instead of a blind sprint deeper into a dense field. Sprint only on a
-        -- REPEAT hit (probing failed) or if it isn't a feeler. Gated on st.feel_on so only the
-        -- ~1 feeler per cell holds; everyone else bolts immediately (no contact-thrash).
-        if st.feel_on and not st.contacted then
+        -- Discover-on-contact: a FIRST hit makes this NPC a victim, not a fugitive. Mark it
+        -- (st.contacted -> it now FEELS via the feel rule below, so it has the engine back-away
+        -- as a real fallback), force the zone that hit it into memory, and HOLD -- fall through
+        -- to routing/feel instead of blind-sprinting deeper. Sprint only on a REPEAT hit (the
+        -- back-away/route failed). Safe because the held NPC always gets feel now.
+        if not st.contacted then
             st.contacted = true
             if st.last_anomaly and st.last_anomaly.name then
                 st.known_anomalies = st.known_anomalies or {}
                 st.known_anomalies[st.last_anomaly.name] = { last_seen = current_time, detected = true }
             end
-            dbg_log("PUSH_THROUGH", "[%s] first contact while feeling -> discovered [%s], holding",
+            dbg_log("PUSH_THROUGH", "[%s] first contact -> discovered [%s], holding (feel/route)",
                 npc:name() or "?", st.last_anomaly and st.last_anomaly.name or "?")
-            -- fall through to detection/feel (now avoids the discovered zone)
+            -- fall through to detection/restriction/feel: the victim now feels + routes
         else
             request_push_through(npc, st, "in contact", true)
             return
@@ -1370,17 +1367,14 @@ local function update_npc_restrictions(npc, detection_radius)
         end
     end
 
-    -- FEEL election runs regardless of the detection roll: feel (engine routing + bolts) goes
-    -- to ONE elected NPC per squad-contention radius, which is the cell's scout. It must feel
-    -- even on a tick it personally rolled a miss (with g_ai_die_in_anomaly = 0 the engine
-    -- ignores anomalies otherwise) -- gating feel on the detection roll collapses to almost no
-    -- feeling, since the lowest-id NPC usually isn't the one that detected. Detection gates
-    -- restrictions (below), not feel.
+    -- Feel (engine routing + bolts) goes to the squad SCOUT (always probing, so the squad has a
+    -- prober and shapeless fields get scouted) and to any RECENT VICTIM (st.contacted -- it just
+    -- got hit and is backing away). Decoupled from the detection roll: with g_ai_die_in_anomaly
+    -- = 0 the engine ignores anomalies unless feel is on, and gating feel on the roll collapses
+    -- to almost no feeling. Detection gates restrictions (below), not feel.
     local feel_on = false
     if get_mcm_setting("engine_avoidance", true) then
-        local self_squad = safe_call(get_object_squad, npc)
-        local self_squad_id = self_squad and self_squad.id or nil
-        feel_on = is_feeler_elected(id, npc_pos, self_squad_id)
+        feel_on = is_squad_scout(npc) or (st.contacted == true)
     end
     set_npc_feel(npc, st, feel_on)
 
@@ -1775,21 +1769,6 @@ local function nda_periodic_tick()
     local actor_pos = get_position_copy(db.actor)
     
     if not actor_pos then return end
-
-    -- Snapshot online stalker positions for the feeler election
-    -- (is_feeler_elected). Rebuilt each tick so it reflects current positions.
-    local snap = {}
-    for _, sval in pairs(db.OnlineStalkers or {}) do
-        local sobj = sval
-        if type(sobj) == "number" then sobj = level.object_by_id(sobj) end
-        if is_valid_stalker(sobj) then
-            local p = get_position_copy(sobj)
-            -- db.OnlineStalkers is an index-keyed array, so the table key is NOT the id;
-            -- store the real object id or the id comparison in is_feeler_elected breaks.
-            if p then snap[#snap + 1] = { id = safe_call(sobj.id, sobj), pos = p } end
-        end
-    end
-    tick_npc_positions = snap
 
     local processed = 0
 
