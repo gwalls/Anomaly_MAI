@@ -990,8 +990,11 @@ local function other_squad_pushing_near(pos, my_identifier)
     return false
 end
 
--- Push the committer + eligible squadmates into push_through, then set the squad running.
--- Takes an id and re-resolves npc/st since a deferred call may run after the NPC moved.
+-- Commit only THIS NPC to push_through, then set the squad running. Individual rush: the
+-- committer drops restrictions/feel and sprints out; squadmates are NOT dragged in -- they keep
+-- their own avoidance (scout/victim feel, restriction routing) and just hurry via the squad
+-- rush flag, so they route around rather than get pulled through. Re-resolves npc/st since a
+-- deferred call may run after the NPC moved.
 local function commit_push_through(self_id, reason, single)
     local npc = level.object_by_id(self_id)
     if not is_valid_stalker(npc) then return end
@@ -999,24 +1002,6 @@ local function commit_push_through(self_id, reason, single)
     if not st then return end
 
     enter_push_through(npc, st, reason, single)
-
-    local squad = safe_call(get_object_squad, npc)
-    if squad then
-        for member in squad:squad_members() do
-            if member.id ~= self_id then
-                local mate = level.object_by_id(member.id)
-                if is_valid_stalker(mate) and should_add_restrictions(mate) then
-                    local mate_id = mate:id()
-                    local mate_st = npc_state[mate_id]
-                    if not mate_st then mate_st = {}; npc_state[mate_id] = mate_st end
-                    if not mate_st.push_through then
-                        enter_push_through(mate, mate_st, reason .. " (squadmate)", single)
-                    end
-                end
-            end
-        end
-    end
-
     set_squad_running(npc)
 end
 
@@ -1164,8 +1149,8 @@ local function update_npc_restrictions(npc, detection_radius)
             -- fall through to normal detection/restriction logic
         else
             -- Still committed: keep restrictions/feel off and run. Direct set_movement_type
-            -- here (not just the squad rush flag, which only moves xr_reach_task NPCs) makes
-            -- propagated squadmates actually sprint instead of walking through defenseless.
+            -- here (not just the squad rush flag, which only moves xr_reach_task NPCs) keeps the
+            -- committer sprinting even on schemes the rush flag doesn't drive.
             if st.restrictions then clear_npc_restrictions(npc) end
             set_npc_feel(npc, st, false)
             set_squad_rush(npc, true)
