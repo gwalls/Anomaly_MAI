@@ -888,6 +888,27 @@ local function is_squad_scout(npc)
     return true
 end
 
+-- True if any squadmate has a FRESH detected=true record for `anom_name` -- i.e. a squadmate
+-- has already discovered this anomaly and its memory hasn't decayed yet. Lets the squad pool
+-- discoveries: one member's detection routes the rest around the field without each re-rolling.
+-- Reads squadmates' own npc_state memory directly (no broadcast table); only meaningful while
+-- per-NPC memory is on, since that's where the detected records live. Off by default (MCM).
+local function squad_knows_anomaly(npc, anom_name, current_time, decay_ms)
+    local squad = safe_call(get_object_squad, npc)
+    if not squad then return false end
+    local self_id = npc:id()
+    for member in squad:squad_members() do
+        if member.id ~= self_id then
+            local mst = npc_state[member.id]
+            local mem = mst and mst.known_anomalies and mst.known_anomalies[anom_name]
+            if mem and mem.detected and (current_time - mem.last_seen) <= decay_ms then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 -- Sets the engine anomaly feel flag for the NPC.
 -- Deduped using st.feel_on to prevent spamming the engine every tick.
 -- States:
@@ -1219,6 +1240,10 @@ local function update_npc_restrictions(npc, detection_radius)
     end
 
     local immune_zero = get_mcm_setting("immune_zero_miss_chance", true)
+    -- Squad pools discoveries: a squadmate's fresh detection routes this NPC around the field
+    -- without it re-rolling. Builds on per-NPC memory (where the records live), so it's a no-op
+    -- when memory is off. Off by default.
+    local shared_mem_on = mem_on and get_mcm_setting("shared_squad_memory", false)
 
     for idx, anom in ipairs(nearby) do
         -- An anomaly the NPC is already inside can't be routed around, so don't treat it as a
@@ -1245,12 +1270,20 @@ local function update_npc_restrictions(npc, detection_radius)
             if mem_on then known[anom.name] = { last_seen = current_time, detected = true } end
         else
             local mem = mem_on and known[anom.name] or nil
-            if mem and (current_time - mem.last_seen) <= mem_decay_ms then
-                -- Already evaluated recently: reuse the outcome, no re-roll.
-                if mem.detected then
-                    tinsert(detected, anom.name)
-                    mem.last_seen = current_time   -- keep a known hazard fresh while near
-                end
+            local fresh = mem and (current_time - mem.last_seen) <= mem_decay_ms
+            if fresh and mem.detected then
+                -- Personal fresh hit: reuse it, no re-roll and no squad scan needed.
+                tinsert(detected, anom.name)
+                mem.last_seen = current_time   -- keep a known hazard fresh while near
+            elseif shared_mem_on and squad_knows_anomaly(npc, anom.name, current_time, mem_decay_ms) then
+                -- A squadmate has discovered it: adopt without rolling. Consulted only when this
+                -- NPC has no fresh hit of its own, so it also overrides a personal fresh MISS.
+                tinsert(detected, anom.name)
+                known[anom.name] = { last_seen = current_time, detected = true }
+                dbg_verbose("SHARED", "[%s] adopted squad knowledge of [%s]",
+                    npc:name() or "?", anom.name)
+            elseif fresh then
+                -- Personal fresh miss, no squad knowledge: keep skipping it, no re-roll.
             else
                 -- First sighting (or forgotten since): roll once.
                 local roll = mrand(1, 100)

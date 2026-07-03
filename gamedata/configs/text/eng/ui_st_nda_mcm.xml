@@ -132,6 +132,13 @@
         <text>How long an NPC remembers a detected anomaly after leaving the area. Remembered anomalies bypass the miss roll, so avoidance stays reliable. Set to 0 to disable memory entirely. Default: 30s</text>
     </string>
 
+    <string id="ui_mcm_nda_shared_squad_memory">
+        <text>Shared Squad Memory</text>
+    </string>
+    <string id="ui_mcm_nda_shared_squad_memory_desc">
+        <text>When one squad member detects an anomaly, the rest of the squad routes around it too, without each rolling to notice it. Makes a squad avoid as a group instead of individually. Requires Anomaly Memory to be on (shared records expire on the same timer). Default: OFF</text>
+    </string>
+
     <string id="ui_mcm_nda_legacy_anomaly_ignores">
         <text>Legacy Hardcoded Ignores</text>
     </string>

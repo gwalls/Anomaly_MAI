@@ -22,6 +22,7 @@ local defaults = {
     bubble_radius = 150,
     restrictions_ignore_radius = true,
     anomaly_memory_decay = 30,
+    shared_squad_memory = false,
     legacy_anomaly_ignores = true,
 
     -- avoidance
@@ -106,7 +107,7 @@ assign_group("debug",     { "debug_mode", "verbose_debug", "show_debug_anomalies
                             "cleanup_map_markers", "debug_death_news", "debug_death_map_spot" })
 assign_group("detection", { "base_detection_radius", "cache_rebuild_delay", "anomaly_state_refresh",
                             "bubble_enabled", "bubble_radius", "restrictions_ignore_radius",
-                            "anomaly_memory_decay", "legacy_anomaly_ignores" })
+                            "anomaly_memory_decay", "shared_squad_memory", "legacy_anomaly_ignores" })
 assign_group("avoidance", { "npc_stuck_timeout", "engine_avoidance",
                             "clear_avoid_restrictors", "block_corpse_loot_in_anomalies" })
 assign_group("damage",    { "enable_armor_damage_mult", "immune_zero_miss_chance", "combat_only_damage",
@@ -185,6 +186,7 @@ function on_mcm_load()
                 { id = "bubble_radius",         type = "track", val = 2, min = 50, max = 500, step = 25, def = 150 },
                 { id = "restrictions_ignore_radius", type = "check", val = 1, def = true },
                 { id = "anomaly_memory_decay",  type = "track", val = 2, min = 0, max = 120, step = 10, def = 30 },
+                { id = "shared_squad_memory",   type = "check", val = 1, def = false },
                 { id = "legacy_anomaly_ignores", type = "check", val = 1, def = true },
             }),
 
