@@ -1790,7 +1790,7 @@ local function nda_periodic_tick()
     for _, st in pairs(npc_state) do
         if st.push_through then pushing = pushing + 1 end
     end
-    dbg_log("HEARTBEAT", "tick processed=%d pushing=%d cache=%d", processed, pushing, #anomaly_cache)
+    dbg_verbose("HEARTBEAT", "tick processed=%d pushing=%d cache=%d", processed, pushing, #anomaly_cache)
 end
 
 local function schedule_next_tick()
